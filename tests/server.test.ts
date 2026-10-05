@@ -18,6 +18,7 @@ describe("QA.army MCP Run parity", () => {
 
     const listed = await client.listTools();
     expect(listed.tools.map(({ name }) => name)).toEqual([
+      "memories.list", "memories.graph", "memories.summary", "memories.create", "memories.update", "memories.decide", "memories.settings", "memories.import", "memories.history", "memories.clear",
       "workspaces.list", "workspaces.create", "workspaces.get", "workspaces.update",
       "projects.list", "projects.create", "members.list", "invitations.create",
       "groups.list", "groups.create", "groups.get", "groups.update",
@@ -31,6 +32,16 @@ describe("QA.army MCP Run parity", () => {
     const [, init] = request.mock.calls[0]!;
     expect(init?.body).toBe(JSON.stringify({ test_id: `tst_${"4".repeat(32)}` }));
     expect(JSON.stringify(result)).not.toContain("never-print-this");
+  });
+
+  it('maps governed memory decisions and validates project scope before REST',async()=>{
+    const request=vi.fn<typeof fetch>(async()=>new Response(JSON.stringify({updated:true}),{status:200}));
+    const server=createVenkatMcpServer({baseUrl:'https://app.example.test',accessToken:'private-token',request});
+    const client=new Client({name:'memory-test',version:'1'});const [a,b]=InMemoryTransport.createLinkedPair();await server.connect(b);await client.connect(a);open.push(client,server);
+    const project='prj_'+'a'.repeat(32),memory='mem_'+'b'.repeat(32);
+    const result=await client.callTool({name:'memories.decide',arguments:{project_id:project,memory_id:memory,revision:3,decision:'APPROVED'}});
+    expect(result.isError).not.toBe(true);expect(request.mock.calls[0]![0]).toBe(`https://app.example.test/v1/projects/${project}/memory/${memory}`);expect(JSON.parse(String(request.mock.calls[0]![1]!.body))).toEqual({revision:3,decision:'APPROVED'});
+    const invalid=await client.callTool({name:'memories.settings',arguments:{project_id:'bad',auto_learn:true}});expect(invalid.isError).toBe(true);expect(request).toHaveBeenCalledTimes(1);expect(JSON.stringify(result)).not.toContain('private-token');
   });
 
   it("maps start, watch, and cancel to the same safe REST Run surface", async () => {

@@ -10,8 +10,8 @@ const runId = z.string().regex(/^run_[a-f0-9]{32}$/).describe("Server-owned Run 
 const version = z.number().int().positive();
 const genericOutput = z.looseObject({});
 const receipt = z.object({
-  id: z.string(), status: z.enum(["READY", "QUEUED", "PROVISIONING", "RUNNING", "PASSED", "ERROR", "CANCELLED"]), workspace_id: z.string(), project_id: z.string(),
-  test_group_id: z.string().nullable(), test_id: z.string(), context_schema_version: z.union([z.literal(1), z.literal(2)]),
+  id: z.string(), status: z.enum(["READY", "QUEUED", "PROVISIONING", "RUNNING", "PASSED", "FAILED", "ERROR", "CANCELLED"]), workspace_id: z.string(), project_id: z.string(),
+  test_group_id: z.string().nullable(), test_id: z.string(), context_schema_version: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   context_hash: z.string(), resolved_at: z.string(), cancellation_requested_at: z.string().nullable(),
   completed_at: z.string().nullable(), outcome_summary: z.string().nullable(),
 });
@@ -52,6 +52,16 @@ export function createVenkatMcpServer(options: VenkatMcpOptions) {
     { name: "venkat", version: "0.1.0" },
     { instructions: "Manage QA.army through server-authorized REST operations. Never infer or submit Workspace scope." },
   );
+  const memoryFields=z.object({title:z.string().min(1).max(150),content:z.string().min(1).max(10000),category:z.enum(['PRODUCT_BEHAVIOR','NAVIGATION','TEST_INSIGHT','PROJECT_GUIDANCE']).optional(),kind:z.enum(['REQUIREMENT','OBSERVATION','INFERENCE','GUIDANCE']).optional(),importance:z.enum(['HIGH','MEDIUM','LOW']).optional(),scope:z.enum(['WORKSPACE','PROJECT','TEST_GROUP']).optional(),test_group_id:groupId.nullable().optional(),target_origin:z.url().nullable().optional()});
+  const memoryId=z.string().regex(/^mem_[a-f0-9]{32}$/);
+  for(const operation of ['list','graph','summary'] as const)server.registerTool(`memories.${operation}`,{description:`Read Project memory ${operation}.`,inputSchema:z.object({project_id:projectId}),outputSchema:genericOutput,annotations:readOnly},async({project_id})=>result(()=>api.operation(`/v1/projects/${project_id}/memory${operation==='list'?'':'/'+operation}`)));
+  server.registerTool('memories.create',{description:'Add product context; members create proposals and owners approve publication.',inputSchema:memoryFields.extend({project_id:projectId}),outputSchema:genericOutput,annotations:mutate},async({project_id,...body})=>result(()=>api.operation(`/v1/projects/${project_id}/memory`,'POST',body)));
+  server.registerTool('memories.update',{description:'Correct memory with revision checking. Owner only.',inputSchema:memoryFields.extend({project_id:projectId,memory_id:memoryId,revision:version}),outputSchema:genericOutput,annotations:mutate},async({project_id,memory_id,...body})=>result(()=>api.operation(`/v1/projects/${project_id}/memory/${memory_id}`,'PATCH',body)));
+  server.registerTool('memories.decide',{description:'Approve, reject or archive memory. Owner only.',inputSchema:z.object({project_id:projectId,memory_id:memoryId,revision:version,decision:z.enum(['APPROVED','REJECTED','ARCHIVED'])}),outputSchema:genericOutput,annotations:mutate},async({project_id,memory_id,...body})=>result(()=>api.operation(`/v1/projects/${project_id}/memory/${memory_id}`,'POST',body)));
+  server.registerTool('memories.settings',{description:'Set automatic publication of verified observations. Inferences and conflicts require review. Owner only.',inputSchema:z.object({project_id:projectId,auto_learn:z.boolean()}),outputSchema:genericOutput,annotations:mutate},async({project_id,...body})=>result(()=>api.operation(`/v1/projects/${project_id}/memory/settings`,'PATCH',body)));
+  server.registerTool('memories.import',{description:'Extract review-required proposals from pasted specifications.',inputSchema:z.object({project_id:projectId,title:z.string().min(1).max(150),text:z.string().min(1).max(100000)}),outputSchema:genericOutput,annotations:mutate},async({project_id,...body})=>result(()=>api.operation(`/v1/projects/${project_id}/memory/imports`,'POST',body)));
+  server.registerTool('memories.history',{description:'Queue review-required proposals from recent historical Runs.',inputSchema:z.object({project_id:projectId}),outputSchema:genericOutput,annotations:mutate},async({project_id})=>result(()=>api.operation(`/v1/projects/${project_id}/memory/history`,'POST',{})));
+  server.registerTool('memories.clear',{description:'Archive this Project memory and disable automatic updates. Historical Run snapshots remain.',inputSchema:z.object({project_id:projectId}),outputSchema:genericOutput,annotations:{readOnlyHint:false,destructiveHint:true,idempotentHint:true}},async({project_id})=>result(()=>api.operation(`/v1/projects/${project_id}/memory`,'DELETE')));
   server.registerTool("workspaces.list", {
     description: "List every Workspace authorized for the current QA.army account.",
     inputSchema: z.object({}), outputSchema: genericOutput,
