@@ -1,11 +1,18 @@
-# MCP
+# MCP — agent integrations
 
-When this checkout is inside a local QA.army workspace, find the nearest ancestor containing `.qa-army-workspace` and read that ancestor's AGENTS.md before changes. If absent, use this repository's instructions independently; private workspace access is not required.
+**Be a doer.** Inspect, implement, test, review, merge, deploy or publish when needed, and verify the requested outcome. Fix failures and continue until delivered or concretely blocked; a plan, PR, or green build alone is not completion.
 
-- Own MCP tool schemas, API adapters, transport behavior, errors, and public MCP documentation.
-- Match supported platform API semantics and applicable CLI capabilities. Do not duplicate server-owned authorization, context resolution, or execution policy.
-- Platform contract changes require matching tool/schema/error updates where applicable. Update affected skills when tool names or workflows change.
-- Install with `npm ci`; validate with `npm run validate`. Test malformed inputs, API failures, and authentication boundaries where relevant.
-- Maintain required Linux, macOS, and Windows validation. Do not add a QA.army journey gate without a scoped rollout.
-- Use a clean task branch from current origin/main, review the final diff, and pass required checks before release.
-- Keep credentials and private operational material out of this public repository.
+If an ancestor contains `.qa-army-workspace`, read its `AGENTS.md` first. Otherwise, this repo stands alone.
+
+- Own tool schemas, REST adapters, stdio transport, typed errors, and MCP docs.
+- Match supported platform/CLI capabilities. Authorization, context resolution, and execution remain server-owned; MCP stays outside the Run execution path.
+- Coordinate API/schema/tool-name changes with platform and skills. Use [README](README.md) validation; test malformed input, auth boundaries, and API failures.
+- Use a clean task branch from current main, review the diff, and pass Linux/macOS/Windows CI. QA.army journey gates currently apply only to landing-marketing.
+- Preserve compatibility identifiers and unrelated work. Keep credentials/private operations out of this public repo; reserve stdout for MCP.
+
+## Direction
+
+- Build a better product than [TesterArmy](https://tester.army/); read its [blog](https://tester.army/blog) for product guidance and verify ideas against customer needs.
+- Get funding through shipped value, measurable traction, and repeatable demos backed by real evidence. Never invent results.
+- QA.army is the first customer: use the same product, permissions, integrations, and release journeys customers use; turn findings into general fixes.
+- Build for SaaS, web, mobile, and desktop customers across domains. Customer URLs, IDs, selectors, and workflows belong in configuration or Tests, never product-code special cases. Do not overbuild unrequested abstractions.
