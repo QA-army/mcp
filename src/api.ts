@@ -5,14 +5,14 @@ export interface RunReceipt {
   readonly project_id: string;
   readonly test_group_id: string | null;
   readonly test_id: string;
-  readonly context_schema_version: 1 | 2;
+  readonly context_schema_version: 1 | 2 | 3;
   readonly context_hash: string;
   readonly resolved_at: string;
   readonly cancellation_requested_at: string | null;
   readonly completed_at: string | null;
   readonly outcome_summary: string | null;
 }
-type RunStatus = "READY" | "QUEUED" | "PROVISIONING" | "RUNNING" | "PASSED" | "ERROR" | "CANCELLED";
+type RunStatus = "READY" | "QUEUED" | "PROVISIONING" | "RUNNING" | "PASSED" | "FAILED" | "ERROR" | "CANCELLED";
 
 export class VenkatApi {
   constructor(
@@ -60,7 +60,7 @@ export class VenkatApi {
 
 function parseRun(value: unknown): RunReceipt {
   const run = record(value); const hash = string(run.context_hash);
-  if (!isStatus(run.status) || (run.context_schema_version !== 1 && run.context_schema_version !== 2) || !/^sha256:[a-f0-9]{64}$/.test(hash)) {
+  if (!isStatus(run.status) || (run.context_schema_version !== 1 && run.context_schema_version !== 2 && run.context_schema_version !== 3) || !/^sha256:[a-f0-9]{64}$/.test(hash)) {
     throw new Error("QA.army returned an invalid Run receipt");
   }
   return {
@@ -72,7 +72,7 @@ function parseRun(value: unknown): RunReceipt {
     completed_at: nullableString(run.completed_at), outcome_summary: nullableString(run.outcome_summary),
   };
 }
-function isStatus(value: unknown): value is RunStatus { return typeof value === "string" && ["READY", "QUEUED", "PROVISIONING", "RUNNING", "PASSED", "ERROR", "CANCELLED"].includes(value); }
+function isStatus(value: unknown): value is RunStatus { return typeof value === "string" && ["READY", "QUEUED", "PROVISIONING", "RUNNING", "PASSED", "FAILED", "ERROR", "CANCELLED"].includes(value); }
 function nullableString(value: unknown): string | null { return value === null || value === undefined ? null : string(value); }
 function record(value: unknown): Record<string, unknown> { if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("QA.army returned an invalid Run receipt"); return value as Record<string, unknown>; }
 function string(value: unknown): string { if (typeof value !== "string") throw new Error("QA.army returned an invalid Run receipt"); return value; }
