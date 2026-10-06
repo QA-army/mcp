@@ -6,7 +6,7 @@ const open: Array<{ close(): Promise<void> }> = [];
 afterEach(async () => { await Promise.all(open.splice(0).map((item) => item.close())); });
 
 describe("QA.army MCP Run parity", () => {
-  it.each([1, 2, 3, 4])("reads RunContext v%i receipts", async context_schema_version => {
+  it.each([1, 2, 3, 4, 5])("reads RunContext v%i receipts", async context_schema_version => {
     const request = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ run: { ...runObject("READY"), context_schema_version } })));
     const server = createVenkatMcpServer({ baseUrl: "https://api.qa.army", accessToken: "token", request });
     const client = new Client({ name: "compatibility", version: "1" });
@@ -20,11 +20,13 @@ describe("QA.army MCP Run parity", () => {
     const client = new Client({ name: "authoring", version: "1" });
     const [a, b] = InMemoryTransport.createLinkedPair(); await server.connect(b); await client.connect(a); open.push(client, server);
     const verification = { expectation: "Yearly is selected", timeout_ms: 30000, checks: [{ query: "Selected billing period", equals: "Yearly" }] };
-    const args = { project_id: `prj_${"a".repeat(32)}`, name: "Billing", description: null, group_id: null, enabled: true, allow_web_search: false,
+    const journey={schema_version:'journey-composition.v1',goal:'Test billing',sources:[{fragment_id:'frg_'+'a'.repeat(32),test_id:'tst_'+'b'.repeat(32),test_version:1,step_id:'stp_'+'c'.repeat(32),primitive:'ACT',content_sha256:'a'.repeat(64)}],steps:[{position:0,source_fragment_ids:['frg_'+'a'.repeat(32)],inferred_connection:null},{position:1,source_fragment_ids:[],inferred_connection:'Capture result'}],bindings:[],binding_checks:[],unresolved_prerequisites:[]};
+    const args = { journey, project_id: `prj_${"a".repeat(32)}`, name: "Billing", description: null, group_id: null, enabled: true, allow_web_search: false,
       deep_thinking: false, location_override: null, viewport: null, device_name: null,
       steps: [{ type: "act", instruction: "Click Yearly", enabled: true, verification }, { type: "screenshot", instruction: "Capture", enabled: true }] };
     expect((await client.callTool({ name: "tests.create", arguments: args })).isError).not.toBe(true);
     expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body)).steps).toEqual(args.steps);
+    expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body)).journey).toEqual(journey);
     for (const type of ["assert", "screenshot"]) expect((await client.callTool({ name: "tests.create", arguments: { ...args, steps: [{ ...args.steps[0], type }] } })).isError).toBe(true);
     expect(request).toHaveBeenCalledTimes(1);
   });
