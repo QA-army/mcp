@@ -30,8 +30,9 @@ export class VenkatApi {
     method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE" = "GET",
     body?: unknown,
     version?: number,
+    idempotencyKey?: string,
   ): Promise<Record<string, unknown>> {
-    const value = await this.call(path, method, body, version);
+    const value = await this.call(path, method, body, version, idempotencyKey);
     return value === undefined ? { archived: true } : record(value);
   }
   private async call(
@@ -39,13 +40,14 @@ export class VenkatApi {
     method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE",
     body?: unknown,
     version?: number,
+    idempotencyKey?: string,
   ): Promise<RunReceipt | Record<string, unknown> | undefined> {
     const response = await this.request(`${this.baseUrl.replace(/\/$/, "")}${path}`, {
       method,
       headers: {
         accept: "application/json", authorization: `Bearer ${this.accessToken}`,
         ...(body ? { "content-type": "application/json" } : {}),
-        ...(method === "POST" ? { "idempotency-key": globalThis.crypto.randomUUID() } : {}),
+        ...(method === "POST" ? { "idempotency-key": idempotencyKey ?? globalThis.crypto.randomUUID() } : {}),
         ...(version ? { "if-match": String(version) } : {}),
       },
       ...(body ? { body: JSON.stringify(body) } : {}),
