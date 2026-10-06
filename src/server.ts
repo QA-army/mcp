@@ -52,6 +52,20 @@ export function createVenkatMcpServer(options: VenkatMcpOptions) {
     { name: "venkat", version: "0.1.0" },
     { instructions: "Manage QA.army through server-authorized REST operations. Never infer or submit Workspace scope." },
   );
+  server.registerTool("builds.list", {
+    description: "List the latest 100 Workspace-authorized native build registrations for a Mobile Project.",
+    inputSchema: z.object({ project_id: projectId }), outputSchema: genericOutput, annotations: readOnly,
+  }, async ({ project_id }) => result(() => api.operation(`/v1/projects/${project_id}/builds`)));
+  server.registerTool("builds.reserve", {
+    description: "Reserve immutable original native build bytes. Use a profile API key or user token; agent setup credentials are denied. PUT the file to the returned short-lived URL using only its supplied headers, then complete registration. A registered file does not prove native execution.",
+    inputSchema: z.object({ project_id: projectId, request_key: z.string().regex(/^[A-Za-z0-9_.:-]{8,128}$/),
+      filename: z.string().min(1).max(255), platform: z.enum(["ios", "android"]), size: z.number().int().min(1).max(536870912),
+      sha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict(), outputSchema: genericOutput, annotations: mutate,
+  }, async ({ project_id, request_key, ...body }) => result(() => api.operation(`/v1/projects/${project_id}/builds`, "POST", body, undefined, request_key)));
+  server.registerTool("builds.complete", {
+    description: "Idempotently verify uploaded bytes and freeze their checksum, size and storage version. Provider build IDs and storage keys are not accepted.",
+    inputSchema: z.object({ build_id: z.string().regex(/^nbd_[a-f0-9]{32}$/) }).strict(), outputSchema: genericOutput, annotations: mutate,
+  }, async ({ build_id }) => result(() => api.operation(`/v1/builds/${build_id}/complete`, "POST", {})));
   const memoryFields=z.object({title:z.string().min(1).max(150),content:z.string().min(1).max(10000),category:z.enum(['PRODUCT_BEHAVIOR','NAVIGATION','TEST_INSIGHT','PROJECT_GUIDANCE']).optional(),kind:z.enum(['REQUIREMENT','OBSERVATION','INFERENCE','GUIDANCE']).optional(),importance:z.enum(['HIGH','MEDIUM','LOW']).optional(),scope:z.enum(['WORKSPACE','PROJECT','TEST_GROUP']).optional(),test_group_id:groupId.nullable().optional(),target_origin:z.url().nullable().optional()});
   const memoryId=z.string().regex(/^mem_[a-f0-9]{32}$/);
   for(const operation of ['list','graph','summary'] as const)server.registerTool(`memories.${operation}`,{description:`Read Project memory ${operation}.`,inputSchema:z.object({project_id:projectId}),outputSchema:genericOutput,annotations:readOnly},async({project_id})=>result(()=>api.operation(`/v1/projects/${project_id}/memory${operation==='list'?'':'/'+operation}`)));

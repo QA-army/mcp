@@ -6,6 +6,22 @@ const open: Array<{ close(): Promise<void> }> = [];
 afterEach(async () => { await Promise.all(open.splice(0).map((item) => item.close())); });
 
 describe("QA.army MCP Run parity", () => {
+  it("preserves registration idempotency and refuses provider IDs", async () => {
+    const request = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ build: { id: "registered" } }), { status: 201 }));
+    const server = createVenkatMcpServer({ baseUrl: "https://app.example.test", accessToken: "private-token", request });
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "test", version: "1" });
+    await Promise.all([server.connect(a), client.connect(b)]);
+    const args = { project_id: "prj_" + "a".repeat(32), request_key: "stable-key", filename: "Example.apk", platform: "android", size: 100, sha256: "b".repeat(64) };
+    const receipt = await client.callTool({ name: "builds.reserve", arguments: args });
+    expect(receipt.isError).not.toBe(true);
+    expect(request.mock.calls[0]?.[1]?.headers).toMatchObject({ "idempotency-key": "stable-key" });
+    expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).not.toHaveProperty("request_key");
+    const invalid = await client.callTool({ name: "builds.reserve", arguments: { ...args, provider_build_id: "other" } });
+    expect(invalid.isError).toBe(true); expect(request).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(receipt)).not.toContain("private-token");
+    await client.close(); await server.close();
+  });
   it("discovers and calls runs.create through the MCP protocol using only test_id", async () => {
     const request = vi.fn<typeof fetch>(async () => response());
     const server = createVenkatMcpServer({
@@ -18,6 +34,7 @@ describe("QA.army MCP Run parity", () => {
 
     const listed = await client.listTools();
     expect(listed.tools.map(({ name }) => name)).toEqual([
+      "builds.list", "builds.reserve", "builds.complete",
       "memories.list", "memories.graph", "memories.summary", "memories.create", "memories.update", "memories.decide", "memories.settings", "memories.import", "memories.history", "memories.clear",
       "workspaces.list", "workspaces.create", "workspaces.get", "workspaces.update",
       "projects.list", "projects.create", "members.list", "invitations.create",
