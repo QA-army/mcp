@@ -6,6 +6,28 @@ const open: Array<{ close(): Promise<void> }> = [];
 afterEach(async () => { await Promise.all(open.splice(0).map((item) => item.close())); });
 
 describe("QA.army MCP Run parity", () => {
+  it.each([1, 2, 3, 4])("reads RunContext v%i receipts", async context_schema_version => {
+    const request = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ run: { ...runObject("READY"), context_schema_version } })));
+    const server = createVenkatMcpServer({ baseUrl: "https://api.qa.army", accessToken: "token", request });
+    const client = new Client({ name: "compatibility", version: "1" });
+    const [a, b] = InMemoryTransport.createLinkedPair(); await server.connect(b); await client.connect(a); open.push(client, server);
+    const result = await client.callTool({ name: "runs.create", arguments: { test_id: `tst_${"4".repeat(32)}` } });
+    expect(result.isError).not.toBe(true); expect(result.structuredContent).toMatchObject({ context_schema_version });
+  });
+  it("preserves ACT contracts and rejects contracts on capture and explicit Verify", async () => {
+    const request = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ test: { id: "saved" } })));
+    const server = createVenkatMcpServer({ baseUrl: "https://api.qa.army", accessToken: "token", request });
+    const client = new Client({ name: "authoring", version: "1" });
+    const [a, b] = InMemoryTransport.createLinkedPair(); await server.connect(b); await client.connect(a); open.push(client, server);
+    const verification = { expectation: "Yearly is selected", timeout_ms: 30000, checks: [{ query: "Selected billing period", equals: "Yearly" }] };
+    const args = { project_id: `prj_${"a".repeat(32)}`, name: "Billing", description: null, group_id: null, enabled: true, allow_web_search: false,
+      deep_thinking: false, location_override: null, viewport: null, device_name: null,
+      steps: [{ type: "act", instruction: "Click Yearly", enabled: true, verification }, { type: "screenshot", instruction: "Capture", enabled: true }] };
+    expect((await client.callTool({ name: "tests.create", arguments: args })).isError).not.toBe(true);
+    expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body)).steps).toEqual(args.steps);
+    for (const type of ["assert", "screenshot"]) expect((await client.callTool({ name: "tests.create", arguments: { ...args, steps: [{ ...args.steps[0], type }] } })).isError).toBe(true);
+    expect(request).toHaveBeenCalledTimes(1);
+  });
   it("maps PR settings with stable PUT idempotency and rejects invented authority",async()=>{
     const request=vi.fn<typeof fetch>(async()=>new Response(JSON.stringify({enabled:false}),{status:200}));
     const server=createVenkatMcpServer({baseUrl:'https://api.qa.army',accessToken:'private-token',request});
