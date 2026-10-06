@@ -6,6 +6,19 @@ const open: Array<{ close(): Promise<void> }> = [];
 afterEach(async () => { await Promise.all(open.splice(0).map((item) => item.close())); });
 
 describe("QA.army MCP Run parity", () => {
+  it("exposes daily questions and validates explicit answer choices without tenant authority",async()=>{
+    const request=vi.fn<typeof fetch>(async()=>new Response(JSON.stringify({questions:[],answers:[]})));
+    const server=createVenkatMcpServer({baseUrl:'https://api.qa.army',accessToken:'fixture',request});
+    const client=new Client({name:'memory-daily',version:'1'});const [a,b]=InMemoryTransport.createLinkedPair();await server.connect(b);await client.connect(a);open.push(client,server);
+    const project_id='prj_'+'a'.repeat(32);
+    expect((await client.callTool({name:'memories.questions',arguments:{project_id}})).isError).not.toBe(true);
+    const args={project_id,day:'2026-10-06',question_id:'mq_'+'b'.repeat(32),revision:0,choice:1,skipped:false};
+    expect((await client.callTool({name:'memories.answer',arguments:args})).isError).not.toBe(true);
+    expect(JSON.parse(String(request.mock.calls[1]![1]?.body))).toEqual({...args,project_id:undefined});
+    for(const change of [{choice:3},{workspace_id:'foreign'},{skipped:true}])expect((await client.callTool({name:'memories.answer',arguments:{...args,...change}})).isError).toBe(true);
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
   it.each([1, 2, 3, 4, 5])("reads RunContext v%i receipts", async context_schema_version => {
     const request = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ run: { ...runObject("READY"), context_schema_version } })));
     const server = createVenkatMcpServer({ baseUrl: "https://api.qa.army", accessToken: "token", request });
@@ -72,7 +85,7 @@ describe("QA.army MCP Run parity", () => {
     expect(listed.tools.map(({ name }) => name)).toEqual([
       "prs.list", "prs.get", "prs.usage", "prs.settings", "prs.configure", "prs.cancel", "prs.rerun", "prs.promote",
       "builds.list", "builds.reserve", "builds.complete",
-      "memories.list", "memories.graph", "memories.summary", "memories.create", "memories.update", "memories.decide", "memories.settings", "memories.import", "memories.history", "memories.clear",
+      "memories.questions", "memories.answer", "memories.list", "memories.graph", "memories.summary", "memories.create", "memories.update", "memories.decide", "memories.settings", "memories.import", "memories.history", "memories.clear",
       "workspaces.list", "workspaces.create", "workspaces.get", "workspaces.update",
       "projects.list", "projects.create", "members.list", "invitations.create",
       "groups.list", "groups.create", "groups.get", "groups.update",
