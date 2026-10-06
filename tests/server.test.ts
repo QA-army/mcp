@@ -6,6 +6,18 @@ const open: Array<{ close(): Promise<void> }> = [];
 afterEach(async () => { await Promise.all(open.splice(0).map((item) => item.close())); });
 
 describe("QA.army MCP Run parity", () => {
+  it("maps PR settings with stable PUT idempotency and rejects invented authority",async()=>{
+    const request=vi.fn<typeof fetch>(async()=>new Response(JSON.stringify({enabled:false}),{status:200}));
+    const server=createVenkatMcpServer({baseUrl:'https://api.qa.army',accessToken:'private-token',request});
+    const client=new Client({name:'pr-test',version:'1'});const [a,b]=InMemoryTransport.createLinkedPair();await server.connect(b);await client.connect(a);open.push(client,server);
+    const args={integration_id:'int_'+'a'.repeat(32),request_key:'stable-pr-key',enabled:false,max_tests:3,test_account_ids:[],sandbox_confirmed:false};
+    expect((await client.callTool({name:'prs.configure',arguments:args})).isError).not.toBe(true);
+    expect(request.mock.calls[0]?.[1]).toMatchObject({method:'PUT',headers:{'idempotency-key':'stable-pr-key'}});
+    expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).toEqual({enabled:false,max_tests:3,test_account_ids:[],sandbox_confirmed:false});
+    expect((await client.callTool({name:'prs.configure',arguments:{...args,workspace_id:'foreign'}})).isError).toBe(true);
+    expect((await client.callTool({name:'prs.configure',arguments:{...args,max_tests:4}})).isError).toBe(true);
+    expect(request).toHaveBeenCalledTimes(1);
+  });
   it("preserves registration idempotency and refuses provider IDs", async () => {
     const request = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ build: { id: "registered" } }), { status: 201 }));
     const server = createVenkatMcpServer({ baseUrl: "https://app.example.test", accessToken: "private-token", request });
@@ -34,6 +46,7 @@ describe("QA.army MCP Run parity", () => {
 
     const listed = await client.listTools();
     expect(listed.tools.map(({ name }) => name)).toEqual([
+      "prs.list", "prs.get", "prs.usage", "prs.settings", "prs.configure", "prs.cancel", "prs.rerun", "prs.promote",
       "builds.list", "builds.reserve", "builds.complete",
       "memories.list", "memories.graph", "memories.summary", "memories.create", "memories.update", "memories.decide", "memories.settings", "memories.import", "memories.history", "memories.clear",
       "workspaces.list", "workspaces.create", "workspaces.get", "workspaces.update",
