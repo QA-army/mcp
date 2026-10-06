@@ -11,7 +11,7 @@ const version = z.number().int().positive();
 const genericOutput = z.looseObject({});
 const receipt = z.object({
   id: z.string(), status: z.enum(["READY", "QUEUED", "PROVISIONING", "RUNNING", "PASSED", "FAILED", "ERROR", "CANCELLED"]), workspace_id: z.string(), project_id: z.string(),
-  test_group_id: z.string().nullable(), test_id: z.string(), context_schema_version: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  test_group_id: z.string().nullable(), test_id: z.string(), context_schema_version: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
   context_hash: z.string(), resolved_at: z.string(), cancellation_requested_at: z.string().nullable(),
   completed_at: z.string().nullable(), outcome_summary: z.string().nullable(),
 });
@@ -28,10 +28,16 @@ const projectCreate = z.discriminatedUnion("type", [
   z.object({ workspace_id: workspaceId, name: z.string().min(1).max(100), description: z.string().max(1000).nullable().optional(), type: z.literal("mobile"), target: z.object({ app_name: z.string().min(1).max(100), binary_filename: z.string().max(255).nullable().optional() }) }),
 ]);
 const groupFields = z.object({ name: z.string().min(1).max(100), description: z.string().max(1000).nullable() });
+const actVerification = z.strictObject({
+  expectation: z.string().trim().min(1).max(1000),
+  timeout_ms: z.number().int().min(1000).max(120000).optional(),
+  checks: z.array(z.strictObject({ query: z.string().trim().min(1).max(500), equals: z.union([z.string().max(500), z.number(), z.boolean()]) })).max(8).optional(),
+}).describe("ACT's expected product outcome. Omit to infer and freeze it before execution. Dispatch alone cannot pass ACT.");
 const step = z.object({
   type: z.enum(["act", "assert", "login", "files", "screenshot", "javascript", "microphone"]),
   instruction: z.string().min(1).max(10_000), enabled: z.boolean(),
-});
+  verification: actVerification.optional(),
+}).refine(s => !s.verification || s.type === "act", "Only ACT accepts verification; explicit Verify and Screenshot remain separate steps");
 const testFields = z.object({
   name: z.string().min(1).max(100), description: z.string().max(1000).nullable(),
   group_id: groupId.nullable(), enabled: z.boolean(), allow_web_search: z.boolean(),
@@ -49,7 +55,7 @@ export interface VenkatMcpOptions {
 export function createVenkatMcpServer(options: VenkatMcpOptions) {
   const api = new VenkatApi(options.baseUrl, options.accessToken, options.request);
   const server = new McpServer(
-    { name: "venkat", version: "0.1.0" },
+    { name: "venkat", version: "0.1.1" },
     { instructions: "Manage QA.army through server-authorized REST operations. Never infer or submit Workspace scope." },
   );
   const verificationId=z.string().regex(/^prv_[a-f0-9]{32}$/),integrationId=z.string().regex(/^int_[a-f0-9]{32}$/);

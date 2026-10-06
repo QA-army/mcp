@@ -5,7 +5,7 @@ export interface RunReceipt {
   readonly project_id: string;
   readonly test_group_id: string | null;
   readonly test_id: string;
-  readonly context_schema_version: 1 | 2 | 3;
+  readonly context_schema_version: 1 | 2 | 3 | 4;
   readonly context_hash: string;
   readonly resolved_at: string;
   readonly cancellation_requested_at: string | null;
@@ -62,7 +62,7 @@ export class VenkatApi {
 
 function parseRun(value: unknown): RunReceipt {
   const run = record(value); const hash = string(run.context_hash);
-  if (!isStatus(run.status) || (run.context_schema_version !== 1 && run.context_schema_version !== 2 && run.context_schema_version !== 3) || !/^sha256:[a-f0-9]{64}$/.test(hash)) {
+  if (!isStatus(run.status) || (run.context_schema_version !== 1 && run.context_schema_version !== 2 && run.context_schema_version !== 3 && run.context_schema_version !== 4) || !/^sha256:[a-f0-9]{64}$/.test(hash)) {
     throw new Error("QA.army returned an invalid Run receipt");
   }
   return {
