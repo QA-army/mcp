@@ -18,6 +18,14 @@ Read [AGENTS.md](AGENTS.md). Keep tool schemas aligned with supported platform/C
 
 Codex: open this repo folder as the project and select Worktree from `main`. `.codex/environments/environment.toml` provides setup, cleanup, and actions; dependency installation is explicit.
 
+## Workspace invitations
+
+`invitations.list` takes `workspace_id`; `invitations.revoke` also takes `invitation_id`. `invitations.resend` takes both identifiers and a required `request_key` (1–128 letters, digits, `_`, `.`, `:`, or `-`). Resend emails a replacement invitation and invalidates the previous link. Keep the same key when explicitly retrying an uncertain response. The tools do not automatically repeat ambiguous mutations.
+
+Owner authorization is enforced by the Product API. Use an authorized user session or profile API key; restricted agent setup credentials do not gain invitation-management access. Recipient inspection and acceptance require verified Cognito identity and explicit human consent in the browser at `https://app.qa.army/invitations/<invitation_id>`, signed in with the invited email. MCP exposes no recipient acceptance tool.
+
+Lifecycle delivery depends on [platform PR #63](https://github.com/QA-army/platform/pull/63) and remains **DOGFOOD-PENDING** until its release is verified.
+
 ## Product memory
 
 Memory management is undergoing release validation. Use a user session or profile API key; setup-only WorkOS credentials are restricted. Review evidence before approving proposals and keep credentials in Test Accounts. Published memory assists Test creation and individual Run actions; saved assertions still verify current behavior.
