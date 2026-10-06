@@ -47,7 +47,7 @@ export class VenkatApi {
       headers: {
         accept: "application/json", authorization: `Bearer ${this.accessToken}`,
         ...(body ? { "content-type": "application/json" } : {}),
-        ...(method === "POST" ? { "idempotency-key": idempotencyKey ?? globalThis.crypto.randomUUID() } : {}),
+        ...((idempotencyKey || method === "POST") ? { "idempotency-key": idempotencyKey ?? globalThis.crypto.randomUUID() } : {}),
         ...(version ? { "if-match": String(version) } : {}),
       },
       ...(body ? { body: JSON.stringify(body) } : {}),

@@ -25,3 +25,9 @@ Memory management is undergoing release validation. Use a user session or profil
 ### Native build registrations
 
 `builds.list`, `builds.reserve`, and `builds.complete` use server-authorized Mobile Project scope. Reserve the original filename, platform (`ios` or `android`), exact byte count, SHA-256 and a stable request key. Supported files are Android `.apk` and iOS simulator `.app.zip`, `.app.tar.gz` or `.app.tgz`, up to 512 MiB. PUT the file to the returned short-lived URL with only its supplied headers, never the Product bearer token. Complete registration after upload; the server verifies immutable original bytes. These tools require a user session or profile API key; agent setup credentials remain restricted. Build registration does not establish native Run support.
+
+### Dynamic PR Tests pilot
+
+The assisted **DOGFOOD-PENDING** pilot adds `prs.list`, `prs.get`, `prs.settings`, `prs.configure`, `prs.usage`, `prs.cancel`, `prs.rerun`, and `prs.promote`. These tools call canonical REST; they do not read repository credentials or execute Tests locally. Restricted agent setup credentials remain restricted.
+
+Use `prs.usage` before discussing consumption. Enabling dynamic Tests automatically executes at most three generated Tests per matching preview. Planning is included, and each completed generated Test consumes one shared Workspace Run. Show that explicit reruns may consume up to three new Runs before requesting one. Mutation tools require `request_key`; retain it after an uncertain response. Promotion creates an editable regression copy without changing the original verification.
