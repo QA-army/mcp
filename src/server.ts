@@ -44,6 +44,10 @@ const testFields = z.object({
   deep_thinking: z.boolean(), location_override: z.string().max(100).nullable(),
   viewport: z.object({ width: z.number().int().min(320).max(3840), height: z.number().int().min(320).max(2160) }).nullable(),
   device_name: z.string().max(100).nullable(), steps: z.array(step).min(1).max(50),
+  native_target: z.strictObject({
+    build_id: z.string().regex(/^nbd_[a-f0-9]{32}$/),
+    profile_id: z.enum(["android-pixel9pro-15", "ios-iphone16pro-18.2"]),
+  }).nullable().optional(),
 });
 
 export interface VenkatMcpOptions {

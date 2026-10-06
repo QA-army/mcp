@@ -28,6 +28,28 @@ describe("QA.army MCP Run parity", () => {
     for (const type of ["assert", "screenshot"]) expect((await client.callTool({ name: "tests.create", arguments: { ...args, steps: [{ ...args.steps[0], type }] } })).isError).toBe(true);
     expect(request).toHaveBeenCalledTimes(1);
   });
+  it("preserves native saved-Test selection through the same create/update REST tools", async () => {
+    const request = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ test: { id: "tst_saved" } }), { status: 200 }));
+    const server = createVenkatMcpServer({ baseUrl: "https://app.example.test", accessToken: "token", request });
+    const client = new Client({ name: "native-test", version: "1.0.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport); await client.connect(clientTransport); open.push(client, server);
+    const native_target = { build_id: "nbd_" + "a".repeat(32), profile_id: "android-pixel9pro-15" };
+    const fields = { name: "App search", description: null, group_id: null, enabled: true,
+      allow_web_search: false, deep_thinking: false, location_override: null, viewport: null, device_name: null,
+      native_target, steps: [{ type: "assert", instruction: "The app home is visible", enabled: true }] };
+    const result = await client.callTool({ name: "tests.create", arguments: { project_id: "prj_" + "b".repeat(32), ...fields } });
+    expect(result.isError).not.toBe(true);
+    expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body)).native_target).toEqual(native_target);
+    const updated = await client.callTool({ name: "tests.update", arguments: { test_id: "tst_" + "c".repeat(32), version: 1,
+      ...fields, native_target: null } });
+    expect(updated.isError).not.toBe(true);
+    expect(JSON.parse(String(request.mock.calls[1]?.[1]?.body)).native_target).toBeNull();
+    const invalid = await client.callTool({ name: "tests.create", arguments: { project_id: "prj_" + "b".repeat(32), ...fields,
+      native_target: { ...native_target, provider_url: "https://example.test" } } });
+    expect(invalid.isError).toBe(true);
+    expect(request).toHaveBeenCalledTimes(2);
+  });
   it("maps PR settings with stable PUT idempotency and rejects invented authority",async()=>{
     const request=vi.fn<typeof fetch>(async()=>new Response(JSON.stringify({enabled:false}),{status:200}));
     const server=createVenkatMcpServer({baseUrl:'https://api.qa.army',accessToken:'private-token',request});
