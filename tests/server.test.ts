@@ -6,6 +6,46 @@ const open: Array<{ close(): Promise<void> }> = [];
 afterEach(async () => { await Promise.all(open.splice(0).map((item) => item.close())); });
 
 describe("QA.army MCP Run parity", () => {
+  it.each(["QUEUED", "PROVISIONING", "RUNNING", "FAILED", "ERROR", "CANCELLED"])("returns the server Run link with the unchanged %s verdict", async status => {
+    const run = { ...runObject(status), context_schema_version: 5 };
+    const request = vi.fn<typeof fetch>(async () => Response.json({ run }));
+    const server = createVenkatMcpServer({ baseUrl: "https://api.qa.army", accessToken: "synthetic-token", request });
+    const client = new Client({ name: "native-receipt", version: "1" });
+    const [a, b] = InMemoryTransport.createLinkedPair(); await server.connect(b); await client.connect(a); open.push(client, server);
+    const result = await client.callTool({ name: "runs.get", arguments: { run_id: run.id } });
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({ status, run_url: run.run_url, context_schema_version: 5 });
+    expect(JSON.stringify(result)).not.toContain("synthetic-token");
+  });
+
+  it.each([
+    { context_schema_version: 6 },
+    { context_hash: "invalid" },
+    { run_url: undefined },
+    { run_url: "https://foreign.example.test/run" },
+    { run_url: runObject("READY").run_url.replace("/runs/run_", "/runs/run_f") },
+    { run_url: `${runObject("READY").run_url}?token=untrusted` },
+  ])("rejects malformed Run receipts %j", async override => {
+    const request = vi.fn<typeof fetch>(async () => Response.json({ run: { ...runObject("READY"), ...override } }));
+    const server = createVenkatMcpServer({ baseUrl: "https://api.qa.army", accessToken: "synthetic-token", request });
+    const client = new Client({ name: "malformed", version: "1" });
+    const [a, b] = InMemoryTransport.createLinkedPair(); await server.connect(b); await client.connect(a); open.push(client, server);
+    const result = await client.callTool({ name: "runs.get", arguments: { run_id: runObject("READY").id } });
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toBeUndefined();
+  });
+
+  it.each([403, 404, 409, 503])("does not turn API %i into a successful Run", async status => {
+    const request = vi.fn<typeof fetch>(async () => Response.json({ message: "Unavailable" }, { status }));
+    const server = createVenkatMcpServer({ baseUrl: "https://api.qa.army", accessToken: "synthetic-token", request });
+    const client = new Client({ name: "api-failure", version: "1" });
+    const [a, b] = InMemoryTransport.createLinkedPair(); await server.connect(b); await client.connect(a); open.push(client, server);
+    const result = await client.callTool({ name: "runs.create", arguments: { test_id: runObject("READY").test_id } });
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toBeUndefined();
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
   it("exposes daily questions and validates explicit answer choices without tenant authority",async()=>{
     const request=vi.fn<typeof fetch>(async()=>new Response(JSON.stringify({questions:[],answers:[]})));
     const server=createVenkatMcpServer({baseUrl:'https://api.qa.army',accessToken:'fixture',request});
@@ -43,13 +83,13 @@ describe("QA.army MCP Run parity", () => {
     for (const type of ["assert", "screenshot"]) expect((await client.callTool({ name: "tests.create", arguments: { ...args, steps: [{ ...args.steps[0], type }] } })).isError).toBe(true);
     expect(request).toHaveBeenCalledTimes(1);
   });
-  it("preserves native saved-Test selection through the same create/update REST tools", async () => {
+  it.each(["android-pixel9pro-15", "ios-iphone16pro-18.2"])("preserves %s saved-Test selection through the same create/update REST tools", async profile_id => {
     const request = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ test: { id: "tst_saved" } }), { status: 200 }));
     const server = createVenkatMcpServer({ baseUrl: "https://app.example.test", accessToken: "token", request });
     const client = new Client({ name: "native-test", version: "1.0.0" });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport); await client.connect(clientTransport); open.push(client, server);
-    const native_target = { build_id: "nbd_" + "a".repeat(32), profile_id: "android-pixel9pro-15" };
+    const native_target = { build_id: "nbd_" + "a".repeat(32), profile_id };
     const fields = { name: "App search", description: null, group_id: null, enabled: true,
       allow_web_search: false, deep_thinking: false, location_override: null, viewport: null, device_name: null,
       native_target, steps: [{ type: "assert", instruction: "The app home is visible", enabled: true }] };
@@ -60,10 +100,16 @@ describe("QA.army MCP Run parity", () => {
       ...fields, native_target: null } });
     expect(updated.isError).not.toBe(true);
     expect(JSON.parse(String(request.mock.calls[1]?.[1]?.body)).native_target).toBeNull();
+    const { native_target: omitted, ...withoutSelection } = fields;
+    expect((await client.callTool({ name: "tests.update", arguments: {
+      test_id: "tst_" + "c".repeat(32), version: 2, ...withoutSelection,
+    } })).isError).not.toBe(true);
+    expect(JSON.parse(String(request.mock.calls[2]?.[1]?.body))).not.toHaveProperty("native_target");
+    expect(request.mock.calls[2]?.[1]).toMatchObject({ method: "PUT", headers: { "if-match": "2" } });
     const invalid = await client.callTool({ name: "tests.create", arguments: { project_id: "prj_" + "b".repeat(32), ...fields,
       native_target: { ...native_target, provider_url: "https://example.test" } } });
     expect(invalid.isError).toBe(true);
-    expect(request).toHaveBeenCalledTimes(2);
+    expect(request).toHaveBeenCalledTimes(3);
   });
   it("maps PR settings with stable PUT idempotency and rejects invented authority",async()=>{
     const request=vi.fn<typeof fetch>(async()=>new Response(JSON.stringify({enabled:false}),{status:200}));
@@ -207,6 +253,7 @@ function runObject(status: string) {
   return {
     id: `run_${"1".repeat(32)}`, status, workspace_id: `wsp_${"2".repeat(32)}`,
     project_id: `prj_${"3".repeat(32)}`, test_group_id: null, test_id: `tst_${"4".repeat(32)}`,
+    run_url: `https://app.qa.army/dashboard/example/projects/prj_${"3".repeat(32)}/tests/tst_${"4".repeat(32)}/runs/run_${"1".repeat(32)}`,
     context_schema_version: 2, context_hash: `sha256:${"a".repeat(64)}`,
     resolved_at: "2026-08-19T12:00:00.000Z",
     cancellation_requested_at: null, completed_at: null, outcome_summary: null,

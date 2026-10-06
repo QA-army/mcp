@@ -13,6 +13,7 @@ const genericOutput = z.looseObject({});
 const receipt = z.object({
   id: z.string(), status: z.enum(["READY", "QUEUED", "PROVISIONING", "RUNNING", "PASSED", "FAILED", "ERROR", "CANCELLED"]), workspace_id: z.string(), project_id: z.string(),
   test_group_id: z.string().nullable(), test_id: z.string(), context_schema_version: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]),
+  run_url: z.url(),
   journey: journeyComposition.optional(),
   context_hash: z.string(), resolved_at: z.string(), cancellation_requested_at: z.string().nullable(),
   completed_at: z.string().nullable(), outcome_summary: z.string().nullable(),
