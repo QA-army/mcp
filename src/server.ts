@@ -35,12 +35,22 @@ const actVerification = z.strictObject({
   timeout_ms: z.number().int().min(1000).max(120000).optional(),
   checks: z.array(z.strictObject({ query: z.string().trim().min(1).max(500), equals: z.union([z.string().max(500), z.number(), z.boolean()]) })).max(8).optional(),
 }).describe("ACT's expected product outcome. Omit to infer and freeze it before execution. Dispatch alone cannot pass ACT.");
+const selector = z.string().trim().min(1).max(150);
+const signupConfiguration = z.strictObject({url:z.url().max(2048),email_label:selector,password_label:selector,submit_label:selector});
+const otpConfiguration = z.strictObject({url:z.url().max(2048),code_label:selector,submit_label:selector,sender:z.email().max(150),subject:selector,mail_profile:z.enum(['VERIFICATION_MARKER_V1','QA_ARMY_COGNITO_CODE_V1']),success_text:selector});
+const linkConfiguration = z.strictObject({origin:z.url().max(2048),path:z.string().regex(/^\/[A-Za-z0-9/_-]*$/).max(1000),sender:z.email().max(150),subject:selector,mail_profile:z.literal('VERIFICATION_MARKER_V1'),success_text:selector});
 const step = z.object({
-  type: z.enum(["act", "assert", "login", "files", "screenshot", "javascript", "microphone"]),
+  type: z.enum(["act", "assert", "login", "files", "screenshot", "javascript", "microphone", "signup", "verify_otp", "verify_link"]),
   instruction: z.string().min(1).max(10_000), enabled: z.boolean(),
   verification: actVerification.optional(),
+  onboarding:z.union([signupConfiguration,otpConfiguration,linkConfiguration]).optional(),
   account_id: z.string().regex(/^tac_[a-f0-9]{32}$/).nullable().optional(),
-}).refine(s => !s.verification || s.type === "act", "Only ACT accepts verification; explicit Verify and Screenshot remain separate steps");
+}).refine(s => {
+  const configuration=s.type==='signup'?signupConfiguration:s.type==='verify_otp'?otpConfiguration:s.type==='verify_link'?linkConfiguration:undefined;
+  return configuration ? configuration.safeParse(s.onboarding).success && (!s.enabled || !!s.account_id) : s.onboarding===undefined;
+}, "Typed onboarding requires bounded configuration and the canonical account handle")
+.refine(s=>!s.account_id || ['login','signup','verify_otp','verify_link'].includes(s.type),"Account handles belong to authentication steps")
+.refine(s => !s.verification || s.type === "act", "Only ACT accepts verification; explicit Verify and Screenshot remain separate steps");
 const testFields = z.object({
   name: z.string().min(1).max(100), description: z.string().max(1000).nullable(),
   group_id: groupId.nullable(), enabled: z.boolean(), allow_web_search: z.boolean(),
