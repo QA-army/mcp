@@ -6,6 +6,20 @@ const open: Array<{ close(): Promise<void> }> = [];
 afterEach(async () => { await Promise.all(open.splice(0).map((item) => item.close())); });
 
 describe("QA.army MCP Run parity", () => {
+  it("exposes request/status/cancel but no owner approval or provider token tools", async () => {
+    const request = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({request: {status: "pending_owner"}})));
+    const server = createVenkatMcpServer({baseUrl: "https://api.qa.army", accessToken: "fixture", request});
+    const client = new Client({name: "owner-request", version: "1"});
+    const [a,b] = InMemoryTransport.createLinkedPair(); await server.connect(b); await client.connect(a); open.push(client,server);
+    const args = {project_id: `prj_${"a".repeat(32)}`, request_key: "stable-request"};
+    expect((await client.callTool({name: "connections.request", arguments: args})).isError).not.toBe(true);
+    expect(request.mock.calls[0]?.[1]).toMatchObject({method: "POST", headers: {"idempotency-key": "stable-request"}});
+    expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).toEqual({provider: "github"});
+    expect((await client.callTool({name: "connections.request", arguments: {...args, token: "injected"}})).isError).toBe(true);
+    const list = await client.listTools();
+    expect(list.tools.some(t => t.name === "connections.approve")).toBe(false);
+    expect(request).toHaveBeenCalledTimes(1);
+  });
   it("exposes daily questions and validates explicit answer choices without tenant authority",async()=>{
     const request=vi.fn<typeof fetch>(async()=>new Response(JSON.stringify({questions:[],answers:[]})));
     const server=createVenkatMcpServer({baseUrl:'https://api.qa.army',accessToken:'fixture',request});
@@ -83,6 +97,7 @@ describe("QA.army MCP Run parity", () => {
 
     const listed = await client.listTools();
     expect(listed.tools.map(({ name }) => name)).toEqual([
+      "connections.request", "connections.status", "connections.cancel",
       "prs.list", "prs.get", "prs.usage", "prs.settings", "prs.configure", "prs.cancel", "prs.rerun", "prs.promote",
       "builds.list", "builds.reserve", "builds.complete",
       "memories.questions", "memories.answer", "memories.list", "memories.graph", "memories.summary", "memories.create", "memories.update", "memories.decide", "memories.settings", "memories.import", "memories.history", "memories.clear",

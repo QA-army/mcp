@@ -64,6 +64,19 @@ export function createVenkatMcpServer(options: VenkatMcpOptions) {
   );
   const verificationId=z.string().regex(/^prv_[a-f0-9]{32}$/),integrationId=z.string().regex(/^int_[a-f0-9]{32}$/);
   const requestKey=z.string().regex(/^[A-Za-z0-9_.:-]{8,128}$/).describe("Reuse this key only when retrying the same request after an uncertain response.");
+  const ownerRequestId = z.string().regex(/^icr_[a-f0-9]{32}$/);
+  server.registerTool("connections.request", {
+    description: "Save an expiring GitHub connection review request and return a first-party owner link. No provider call, token, permissions or installation. The owner must review in their normal browser session; approval is separate from connection.",
+    inputSchema: z.strictObject({project_id: projectId, request_key: requestKey}), outputSchema: genericOutput, annotations: mutate,
+  }, async ({project_id, request_key}) => result(() => api.operation(`/v1/projects/${project_id}/integration-connect-requests`, "POST", {provider: "github"}, undefined, request_key)));
+  server.registerTool("connections.status", {
+    description: "Read your credential-scoped connection request status. Approved does not mean Connected or repository-selected. Cross-tenant and other-credential requests are unavailable.",
+    inputSchema: z.strictObject({request_id: ownerRequestId}), outputSchema: genericOutput, annotations: readOnly,
+  }, async ({request_id}) => result(() => api.operation(`/v1/integration-connect-requests/${request_id}`)));
+  server.registerTool("connections.cancel", {
+    description: "Cancel your pending owner-review request, preserving the audit record. Does not disconnect a provider. Never retry an ambiguous mutation automatically.",
+    inputSchema: z.strictObject({request_id: ownerRequestId, request_key: requestKey}), outputSchema: genericOutput, annotations: mutate,
+  }, async ({request_id, request_key}) => result(() => api.operation(`/v1/integration-connect-requests/${request_id}/cancel`, "POST", {}, undefined, request_key)));
   server.registerTool("prs.list",{description:"List Project dynamic PR verifications. Assisted pilot; no missing execution is a pass.",inputSchema:z.object({project_id:projectId}),outputSchema:genericOutput,annotations:readOnly},async({project_id})=>result(()=>api.operation(`/v1/projects/${project_id}/pr-verifications`)));
   server.registerTool("prs.get",{description:"Read the frozen plan, coverage limitations and canonical Run references.",inputSchema:z.object({verification_id:verificationId}),outputSchema:genericOutput,annotations:readOnly},async({verification_id})=>result(()=>api.operation(`/v1/pr-verifications/${verification_id}`)));
   server.registerTool("prs.usage",{description:"Read shared Workspace pilot allowance, reservations and completed usage.",inputSchema:z.object({workspace_id:workspaceId}),outputSchema:genericOutput,annotations:readOnly},async({workspace_id})=>result(()=>api.operation(`/v1/workspaces/${workspace_id}/pr-usage`)));
