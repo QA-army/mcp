@@ -19,6 +19,21 @@ describe("QA.army MCP Run parity", () => {
     expect(request).toHaveBeenCalledTimes(2);
   });
 
+  it('preserves typed managed signup/OTP configuration and rejects private values before REST',async()=>{
+    const request=vi.fn<typeof fetch>(async()=>new Response(JSON.stringify({test:{id:'saved'}})));
+    const server=createVenkatMcpServer({baseUrl:'https://api.qa.army',accessToken:'fixture',request});
+    const client=new Client({name:'onboarding',version:'1'});const [a,b]=InMemoryTransport.createLinkedPair();await server.connect(b);await client.connect(a);open.push(client,server);
+    const account_id='tac_'+'a'.repeat(32);
+    const args={project_id:'prj_'+'b'.repeat(32),name:'Onboarding',description:null,group_id:null,enabled:true,allow_web_search:false,deep_thinking:false,location_override:null,viewport:null,device_name:null,
+      steps:[{type:'signup',instruction:'Sign up',enabled:true,account_id,onboarding:{url:'https://fixture.example/signup',email_label:'Email',password_label:'Password',submit_label:'Sign up'}},
+       {type:'verify_otp',instruction:'Verify',enabled:true,account_id,onboarding:{url:'https://fixture.example/verify',code_label:'Code',submit_label:'Verify',sender:'verify@example.com',subject:'Verify account',mail_profile:'VERIFICATION_MARKER_V1',success_text:'Account verified'}}]};
+    expect((await client.callTool({name:'tests.create',arguments:args})).isError).not.toBe(true);
+    expect(JSON.parse(String(request.mock.calls[0]![1]?.body)).steps).toEqual(args.steps);
+    for(const extra of [{password:'private'},{otp:'741852'},{recipient:'foreign@example.com'}]) {
+      expect((await client.callTool({name:'tests.create',arguments:{...args,steps:[{...args.steps[0],onboarding:{...args.steps[0]!.onboarding,...extra}},args.steps[1]]}})).isError).toBe(true);
+    }
+    expect(request).toHaveBeenCalledOnce();
+  });
   it.each([1, 2, 3, 4, 5])("reads RunContext v%i receipts", async context_schema_version => {
     const request = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ run: { ...runObject("READY"), context_schema_version } })));
     const server = createVenkatMcpServer({ baseUrl: "https://api.qa.army", accessToken: "token", request });
