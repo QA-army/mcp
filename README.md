@@ -24,7 +24,7 @@ Codex: open this repo folder as the project and select Worktree from `main`. `.c
 
 Owner authorization is enforced by the Product API. Use an authorized user session or profile API key; restricted agent setup credentials do not gain invitation-management access. Recipient inspection and acceptance require verified Cognito identity and explicit human consent in the browser at `https://app.qa.army/invitations/<invitation_id>`, signed in with the invited email. MCP exposes no recipient acceptance tool.
 
-Lifecycle delivery depends on [platform PR #63](https://github.com/QA-army/platform/pull/63) and remains **DOGFOOD-PENDING** until its release is verified.
+Lifecycle delivery depends on [platform PR #63](https://github.com/QA-army/platform/pull/63) and requires that platform release. Availability of the lifecycle operations is not yet verified.
 
 ## Product memory
 
