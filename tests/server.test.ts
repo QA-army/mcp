@@ -19,6 +19,72 @@ describe("QA.army MCP Run parity", () => {
     expect(request).toHaveBeenCalledTimes(2);
   });
 
+  describe("owner invitation lifecycle", () => {
+    const workspace_id = `wsp_${"1".repeat(32)}`;
+    const invitation_id = `inv_${"2".repeat(32)}`;
+    async function connected(request: typeof fetch) {
+      const server = createVenkatMcpServer({ baseUrl: "https://api.qa.army", accessToken: "owner-token", request });
+      const client = new Client({ name: "invitation-test", version: "1" });
+      const [a, b] = InMemoryTransport.createLinkedPair();
+      await server.connect(b); await client.connect(a); open.push(client, server);
+      return client;
+    }
+    it.each(["list", "revoke", "resend"])("maps invitations.%s to canonical Workspace REST", async (action) => {
+      const receipt = action === "list" ? { invitations: [] } : { invitation: { id: action === "resend" ? `inv_${"3".repeat(32)}` : invitation_id, status: action === "revoke" ? "revoked" : "pending" } };
+      const request = vi.fn<typeof fetch>(async () => new Response(JSON.stringify(receipt)));
+      const client = await connected(request);
+      const args = { workspace_id, ...(action === "list" ? {} : { invitation_id }), ...(action === "resend" ? { request_key: "stable-invite-001" } : {}) };
+      const response = await client.callTool({ name: `invitations.${action}`, arguments: args });
+      expect(response.isError).not.toBe(true);
+      expect(response.structuredContent).toEqual(receipt);
+      expect(request).toHaveBeenCalledOnce();
+      const [url, init] = request.mock.calls[0]!;
+      expect(url).toBe(`https://api.qa.army/v1/workspaces/${workspace_id}/invitations${action === "list" ? "" : `/${invitation_id}/${action}`}`);
+      expect(init?.method).toBe(action === "list" ? "GET" : "POST");
+      expect(init?.headers).toMatchObject({ authorization: "Bearer owner-token" });
+      expect(init?.body).toBe(action === "list" ? undefined : "{}");
+      if (action === "resend") expect(init?.headers).toMatchObject({ "idempotency-key": "stable-invite-001" });
+      expect(JSON.stringify(response)).not.toContain("owner-token");
+    });
+    it("retains resend idempotency on explicit retry without retrying an ambiguous failure itself", async () => {
+      const request = vi.fn<typeof fetch>().mockRejectedValueOnce(new Error("Network unavailable"))
+        .mockResolvedValueOnce(new Response(JSON.stringify({ invitation: { id: `inv_${"3".repeat(32)}` } })));
+      const client = await connected(request);
+      const args = { workspace_id, invitation_id, request_key: "stable-invite-001" };
+      expect((await client.callTool({ name: "invitations.resend", arguments: args })).isError).toBe(true);
+      expect(request).toHaveBeenCalledOnce();
+      expect((await client.callTool({ name: "invitations.resend", arguments: args })).isError).not.toBe(true);
+      expect(request).toHaveBeenCalledTimes(2);
+      for (const [, init] of request.mock.calls) expect(init?.headers).toMatchObject({ "idempotency-key": "stable-invite-001" });
+    });
+    it.each([
+      { workspace_id: "../foreign", invitation_id, request_key: "stable-invite-001" },
+      { workspace_id, invitation_id: "inv_bad", request_key: "stable-invite-001" },
+      { workspace_id, invitation_id: `${invitation_id}/accept`, request_key: "stable-invite-001" },
+      { workspace_id, invitation_id },
+      { workspace_id, invitation_id, request_key: "x".repeat(129) },
+      { workspace_id, invitation_id, request_key: "line\nbreak" },
+      { workspace_id, invitation_id, request_key: "stable-invite-001", role: "owner" },
+    ])("rejects malformed input or invented authority %# before REST", async (args) => {
+      const request = vi.fn(); const client = await connected(request);
+      expect((await client.callTool({ name: "invitations.resend", arguments: args })).isError).toBe(true);
+      expect(request).not.toHaveBeenCalled();
+    });
+    it.each([401, 403, 404, 409, 410, 503])("reports HTTP %s without private details or mutation replay", async (status) => {
+      const request = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ detail: "Private invitation details" }), { status }));
+      const client = await connected(request);
+      const response = await client.callTool({ name: "invitations.revoke", arguments: { workspace_id, invitation_id } });
+      expect(response.isError).toBe(true);
+      expect(JSON.stringify(response)).not.toContain("Private");
+      expect(request).toHaveBeenCalledOnce();
+    });
+    it("does not expose recipient inspection or acceptance as agent tools", async () => {
+      const client = await connected(vi.fn());
+      const tools = (await client.listTools()).tools.map(({ name }) => name);
+      expect(tools).not.toContain("invitations.accept");
+      expect(tools).not.toContain("invitations.get");
+    });
+  });
   it.each([1, 2, 3, 4, 5])("reads RunContext v%i receipts", async context_schema_version => {
     const request = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ run: { ...runObject("READY"), context_schema_version } })));
     const server = createVenkatMcpServer({ baseUrl: "https://api.qa.army", accessToken: "token", request });
@@ -87,7 +153,7 @@ describe("QA.army MCP Run parity", () => {
       "builds.list", "builds.reserve", "builds.complete",
       "memories.questions", "memories.answer", "memories.list", "memories.graph", "memories.summary", "memories.create", "memories.update", "memories.decide", "memories.settings", "memories.import", "memories.history", "memories.clear",
       "workspaces.list", "workspaces.create", "workspaces.get", "workspaces.update",
-      "projects.list", "projects.create", "members.list", "invitations.create",
+      "projects.list", "projects.create", "members.list", "invitations.create", "invitations.list", "invitations.revoke", "invitations.resend",
       "groups.list", "groups.create", "groups.get", "groups.update",
       "tests.list", "tests.create", "tests.get", "tests.update", "tests.archive",
       "runs.create", "runs.get", "runs.start", "runs.watch", "runs.cancel",

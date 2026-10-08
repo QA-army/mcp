@@ -4,6 +4,7 @@ import { journeyComposition } from "./journey.js";
 import { VenkatApi } from "./api.js";
 
 const workspaceId = z.string().regex(/^wsp_[a-f0-9]{32}$/);
+const invitationId = z.string().regex(/^inv_[a-f0-9]{32}$/);
 const projectId = z.string().regex(/^prj_[a-f0-9]{32}$/);
 const groupId = z.string().regex(/^tgr_[a-f0-9]{32}$/);
 const testId = z.string().regex(/^tst_[a-f0-9]{32}$/).describe("Server-owned Test identifier");
@@ -133,6 +134,18 @@ export function createVenkatMcpServer(options: VenkatMcpOptions) {
     inputSchema: z.object({ workspace_id: workspaceId, emails: z.array(z.email()).min(1).max(20) }),
     outputSchema: genericOutput, annotations: mutate,
   }, async ({ workspace_id, emails }) => result(() => api.operation(`/v1/workspaces/${encodeURIComponent(workspace_id)}/invitations`, "POST", { emails })));
+  server.registerTool("invitations.list", {
+    description: "List invitations as a Workspace owner. Membership and owner access are enforced by the server.",
+    inputSchema: z.strictObject({ workspace_id: workspaceId }), outputSchema: genericOutput, annotations: readOnly,
+  }, async ({ workspace_id }) => result(() => api.operation(`/v1/workspaces/${encodeURIComponent(workspace_id)}/invitations`)));
+  server.registerTool("invitations.revoke", {
+    description: "Revoke a Workspace invitation as an owner. The previous link can no longer grant membership.",
+    inputSchema: z.strictObject({ workspace_id: workspaceId, invitation_id: invitationId }), outputSchema: genericOutput, annotations: mutate,
+  }, async ({ workspace_id, invitation_id }) => result(() => api.operation(`/v1/workspaces/${encodeURIComponent(workspace_id)}/invitations/${encodeURIComponent(invitation_id)}/revoke`, "POST", {})));
+  server.registerTool("invitations.resend", {
+    description: "Send a replacement Workspace invitation as an owner, invalidating the previous link. Keep the same request_key after an uncertain response. The recipient accepts in the authenticated browser; this tool never accepts on their behalf.",
+    inputSchema: z.strictObject({ workspace_id: workspaceId, invitation_id: invitationId, request_key: z.string().regex(/^[A-Za-z0-9_.:-]{1,128}$/) }), outputSchema: genericOutput, annotations: mutate,
+  }, async ({ workspace_id, invitation_id, request_key }) => result(() => api.operation(`/v1/workspaces/${encodeURIComponent(workspace_id)}/invitations/${encodeURIComponent(invitation_id)}/resend`, "POST", {}, undefined, request_key)));
   server.registerTool("groups.list", {
     description: "List Test Groups for one authorized Project.",
     inputSchema: z.object({ project_id: projectId }), outputSchema: genericOutput, annotations: readOnly,
