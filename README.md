@@ -60,3 +60,7 @@ Read the stable Project/UTC-day set with `qa-army memories questions --project p
 Answers are customer-declared intent and require owner review before publication, even when an owner answers. Corrections append history; stale concurrent answers return a conflict. Never infer customer intent or submit a suggested choice automatically. Published answers may be supplied to future generation; supply does not prove influence or improved results.
 
 To revisit a saved set, select its date in Memory, use CLI `memories questions --project prj_... --day YYYY-MM-DD`, or pass `day` to MCP `memories.questions`. The historical API is `GET /v1/projects/{projectId}/memory/clarifications/{day}`. Only existing sets are returned; prior answers remain correctable with revision checks.
+
+### Owner-mediated GitHub review requests
+
+When the owner-request API is deployed, use `connections.request` with `project_id` and `request_key` to obtain a safe first-party review link. `connections.status` reads your credential-scoped request; `connections.cancel` cancels it without disconnecting a provider. The owner uses their normal authenticated first-party page to approve/decline, then the existing connection flow. Request approval never proves Connected or repository access. These tools do not return provider credentials or install/grant permissions, and there is no agent approval/connect tool. No automatic message to an owner is sent. Preserve environment and credential audience boundaries.
