@@ -18,6 +18,14 @@ Read [AGENTS.md](AGENTS.md). Keep tool schemas aligned with supported platform/C
 
 Codex: open this repo folder as the project and select Worktree from `main`. `.codex/environments/environment.toml` provides setup, cleanup, and actions; dependency installation is explicit.
 
+## Workspace invitations
+
+`invitations.list` takes `workspace_id`; `invitations.revoke` also takes `invitation_id`. `invitations.resend` takes both identifiers and a required `request_key` (1–128 letters, digits, `_`, `.`, `:`, or `-`). Resend emails a replacement invitation and invalidates the previous link. Keep the same key when explicitly retrying an uncertain response. The tools do not automatically repeat ambiguous mutations.
+
+Owner authorization is enforced by the Product API. Use an authorized user session or profile API key; restricted agent setup credentials do not gain invitation-management access. Recipient inspection and acceptance require verified Cognito identity and explicit human consent in the browser at `https://app.qa.army/invitations/<invitation_id>`, signed in with the invited email. MCP exposes no recipient acceptance tool.
+
+Lifecycle delivery depends on [platform PR #63](https://github.com/QA-army/platform/pull/63) and requires that platform release. Availability of the lifecycle operations is not yet verified.
+
 ## Product memory
 
 Memory management is undergoing release validation. Use a user session or profile API key; setup-only WorkOS credentials are restricted. Review evidence before approving proposals and keep credentials in Test Accounts. Published memory assists Test creation and individual Run actions; saved assertions still verify current behavior.
@@ -52,3 +60,7 @@ Read the stable Project/UTC-day set with `qa-army memories questions --project p
 Answers are customer-declared intent and require owner review before publication, even when an owner answers. Corrections append history; stale concurrent answers return a conflict. Never infer customer intent or submit a suggested choice automatically. Published answers may be supplied to future generation; supply does not prove influence or improved results.
 
 To revisit a saved set, select its date in Memory, use CLI `memories questions --project prj_... --day YYYY-MM-DD`, or pass `day` to MCP `memories.questions`. The historical API is `GET /v1/projects/{projectId}/memory/clarifications/{day}`. Only existing sets are returned; prior answers remain correctable with revision checks.
+
+### Owner-mediated GitHub review requests
+
+When the owner-request API is deployed, use `connections.request` with `project_id` and `request_key` to obtain a safe first-party review link. `connections.status` reads your credential-scoped request; `connections.cancel` cancels it without disconnecting a provider. The owner uses their normal authenticated first-party page to approve/decline, then the existing connection flow. Request approval never proves Connected or repository access. These tools do not return provider credentials or install/grant permissions, and there is no agent approval/connect tool. No automatic message to an owner is sent. Preserve environment and credential audience boundaries.

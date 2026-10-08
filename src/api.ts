@@ -5,6 +5,7 @@ export interface RunReceipt {
   readonly project_id: string;
   readonly test_group_id: string | null;
   readonly test_id: string;
+  readonly run_url: string;
   readonly context_schema_version: 1 | 2 | 3 | 4 | 5;
   readonly journey?: Readonly<Record<string, unknown>>;
   readonly context_hash: string;
@@ -69,12 +70,24 @@ function parseRun(value: unknown): RunReceipt {
   return {
     id: string(run.id), status: run.status, workspace_id: string(run.workspace_id),
     project_id: string(run.project_id), test_group_id: run.test_group_id === null ? null : string(run.test_group_id),
-    test_id: string(run.test_id), context_schema_version: run.context_schema_version, context_hash: hash,
+    test_id: string(run.test_id), run_url: runUrl(run.run_url, run),
+    context_schema_version: run.context_schema_version, context_hash: hash,
     ...(run.journey ? {journey:record(run.journey)} : {}),
     resolved_at: string(run.resolved_at),
     cancellation_requested_at: nullableString(run.cancellation_requested_at),
     completed_at: nullableString(run.completed_at), outcome_summary: nullableString(run.outcome_summary),
   };
+}
+function runUrl(value: unknown, run: Readonly<Record<string, unknown>>): string {
+  const result = string(value);
+  let parsed: URL;
+  try { parsed = new URL(result); } catch { throw new Error("QA.army returned an invalid Run receipt"); }
+  const expectedSuffix = `/projects/${string(run.project_id)}/tests/${string(run.test_id)}/runs/${string(run.id)}`;
+  if (parsed.origin !== "https://app.qa.army" || parsed.search || parsed.hash
+    || !/^\/dashboard\/[^/]+\/projects\//.test(parsed.pathname) || !parsed.pathname.endsWith(expectedSuffix)) {
+    throw new Error("QA.army returned an invalid Run receipt");
+  }
+  return result;
 }
 function isStatus(value: unknown): value is RunStatus { return typeof value === "string" && ["READY", "QUEUED", "PROVISIONING", "RUNNING", "PASSED", "FAILED", "ERROR", "CANCELLED"].includes(value); }
 function nullableString(value: unknown): string | null { return value === null || value === undefined ? null : string(value); }

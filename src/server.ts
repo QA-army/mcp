@@ -4,6 +4,7 @@ import { journeyComposition } from "./journey.js";
 import { VenkatApi } from "./api.js";
 
 const workspaceId = z.string().regex(/^wsp_[a-f0-9]{32}$/);
+const invitationId = z.string().regex(/^inv_[a-f0-9]{32}$/);
 const projectId = z.string().regex(/^prj_[a-f0-9]{32}$/);
 const groupId = z.string().regex(/^tgr_[a-f0-9]{32}$/);
 const testId = z.string().regex(/^tst_[a-f0-9]{32}$/).describe("Server-owned Test identifier");
@@ -13,6 +14,7 @@ const genericOutput = z.looseObject({});
 const receipt = z.object({
   id: z.string(), status: z.enum(["READY", "QUEUED", "PROVISIONING", "RUNNING", "PASSED", "FAILED", "ERROR", "CANCELLED"]), workspace_id: z.string(), project_id: z.string(),
   test_group_id: z.string().nullable(), test_id: z.string(), context_schema_version: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]),
+  run_url: z.url(),
   journey: journeyComposition.optional(),
   context_hash: z.string(), resolved_at: z.string(), cancellation_requested_at: z.string().nullable(),
   completed_at: z.string().nullable(), outcome_summary: z.string().nullable(),
@@ -35,18 +37,32 @@ const actVerification = z.strictObject({
   timeout_ms: z.number().int().min(1000).max(120000).optional(),
   checks: z.array(z.strictObject({ query: z.string().trim().min(1).max(500), equals: z.union([z.string().max(500), z.number(), z.boolean()]) })).max(8).optional(),
 }).describe("ACT's expected product outcome. Omit to infer and freeze it before execution. Dispatch alone cannot pass ACT.");
+const selector = z.string().trim().min(1).max(150);
+const signupConfiguration = z.strictObject({url:z.url().max(2048),email_label:selector,password_label:selector,submit_label:selector});
+const otpConfiguration = z.strictObject({url:z.url().max(2048),code_label:selector,submit_label:selector,sender:z.email().max(150),subject:selector,mail_profile:z.enum(['VERIFICATION_MARKER_V1','QA_ARMY_COGNITO_CODE_V1']),success_text:selector});
+const linkConfiguration = z.strictObject({origin:z.url().max(2048),path:z.string().regex(/^\/[A-Za-z0-9/_-]*$/).max(1000),sender:z.email().max(150),subject:selector,mail_profile:z.literal('VERIFICATION_MARKER_V1'),success_text:selector});
 const step = z.object({
-  type: z.enum(["act", "assert", "login", "files", "screenshot", "javascript", "microphone"]),
+  type: z.enum(["act", "assert", "login", "files", "screenshot", "javascript", "microphone", "signup", "verify_otp", "verify_link"]),
   instruction: z.string().min(1).max(10_000), enabled: z.boolean(),
   verification: actVerification.optional(),
+  onboarding:z.union([signupConfiguration,otpConfiguration,linkConfiguration]).optional(),
   account_id: z.string().regex(/^tac_[a-f0-9]{32}$/).nullable().optional(),
-}).refine(s => !s.verification || s.type === "act", "Only ACT accepts verification; explicit Verify and Screenshot remain separate steps");
+}).refine(s => {
+  const configuration=s.type==='signup'?signupConfiguration:s.type==='verify_otp'?otpConfiguration:s.type==='verify_link'?linkConfiguration:undefined;
+  return configuration ? configuration.safeParse(s.onboarding).success && (!s.enabled || !!s.account_id) : s.onboarding===undefined;
+}, "Typed onboarding requires bounded configuration and the canonical account handle")
+.refine(s=>!s.account_id || ['login','signup','verify_otp','verify_link'].includes(s.type),"Account handles belong to authentication steps")
+.refine(s => !s.verification || s.type === "act", "Only ACT accepts verification; explicit Verify and Screenshot remain separate steps");
 const testFields = z.object({
   name: z.string().min(1).max(100), description: z.string().max(1000).nullable(),
   group_id: groupId.nullable(), enabled: z.boolean(), allow_web_search: z.boolean(),
   deep_thinking: z.boolean(), location_override: z.string().max(100).nullable(),
   viewport: z.object({ width: z.number().int().min(320).max(3840), height: z.number().int().min(320).max(2160) }).nullable(),
   device_name: z.string().max(100).nullable(), steps: z.array(step).min(1).max(50),
+  native_target: z.strictObject({
+    build_id: z.string().regex(/^nbd_[a-f0-9]{32}$/),
+    profile_id: z.enum(["android-pixel9pro-15", "ios-iphone16pro-18.2"]),
+  }).nullable().optional(),
   journey: journeyComposition.nullable().optional(),
 });
 
@@ -64,6 +80,19 @@ export function createVenkatMcpServer(options: VenkatMcpOptions) {
   );
   const verificationId=z.string().regex(/^prv_[a-f0-9]{32}$/),integrationId=z.string().regex(/^int_[a-f0-9]{32}$/);
   const requestKey=z.string().regex(/^[A-Za-z0-9_.:-]{8,128}$/).describe("Reuse this key only when retrying the same request after an uncertain response.");
+  const ownerRequestId = z.string().regex(/^icr_[a-f0-9]{32}$/);
+  server.registerTool("connections.request", {
+    description: "Save an expiring GitHub connection review request and return a first-party owner link. No provider call, token, permissions or installation. The owner must review in their normal browser session; approval is separate from connection.",
+    inputSchema: z.strictObject({project_id: projectId, request_key: requestKey}), outputSchema: genericOutput, annotations: mutate,
+  }, async ({project_id, request_key}) => result(() => api.operation(`/v1/projects/${project_id}/integration-connect-requests`, "POST", {provider: "github"}, undefined, request_key)));
+  server.registerTool("connections.status", {
+    description: "Read your credential-scoped connection request status. Approved does not mean Connected or repository-selected. Cross-tenant and other-credential requests are unavailable.",
+    inputSchema: z.strictObject({request_id: ownerRequestId}), outputSchema: genericOutput, annotations: readOnly,
+  }, async ({request_id}) => result(() => api.operation(`/v1/integration-connect-requests/${request_id}`)));
+  server.registerTool("connections.cancel", {
+    description: "Cancel your pending owner-review request, preserving the audit record. Does not disconnect a provider. Never retry an ambiguous mutation automatically.",
+    inputSchema: z.strictObject({request_id: ownerRequestId, request_key: requestKey}), outputSchema: genericOutput, annotations: mutate,
+  }, async ({request_id, request_key}) => result(() => api.operation(`/v1/integration-connect-requests/${request_id}/cancel`, "POST", {}, undefined, request_key)));
   server.registerTool("prs.list",{description:"List Project dynamic PR verifications. Assisted pilot; no missing execution is a pass.",inputSchema:z.object({project_id:projectId}),outputSchema:genericOutput,annotations:readOnly},async({project_id})=>result(()=>api.operation(`/v1/projects/${project_id}/pr-verifications`)));
   server.registerTool("prs.get",{description:"Read the frozen plan, coverage limitations and canonical Run references.",inputSchema:z.object({verification_id:verificationId}),outputSchema:genericOutput,annotations:readOnly},async({verification_id})=>result(()=>api.operation(`/v1/pr-verifications/${verification_id}`)));
   server.registerTool("prs.usage",{description:"Read shared Workspace pilot allowance, reservations and completed usage.",inputSchema:z.object({workspace_id:workspaceId}),outputSchema:genericOutput,annotations:readOnly},async({workspace_id})=>result(()=>api.operation(`/v1/workspaces/${workspace_id}/pr-usage`)));
@@ -133,6 +162,18 @@ export function createVenkatMcpServer(options: VenkatMcpOptions) {
     inputSchema: z.object({ workspace_id: workspaceId, emails: z.array(z.email()).min(1).max(20) }),
     outputSchema: genericOutput, annotations: mutate,
   }, async ({ workspace_id, emails }) => result(() => api.operation(`/v1/workspaces/${encodeURIComponent(workspace_id)}/invitations`, "POST", { emails })));
+  server.registerTool("invitations.list", {
+    description: "List invitations as a Workspace owner. Membership and owner access are enforced by the server.",
+    inputSchema: z.strictObject({ workspace_id: workspaceId }), outputSchema: genericOutput, annotations: readOnly,
+  }, async ({ workspace_id }) => result(() => api.operation(`/v1/workspaces/${encodeURIComponent(workspace_id)}/invitations`)));
+  server.registerTool("invitations.revoke", {
+    description: "Revoke a Workspace invitation as an owner. The previous link can no longer grant membership.",
+    inputSchema: z.strictObject({ workspace_id: workspaceId, invitation_id: invitationId }), outputSchema: genericOutput, annotations: mutate,
+  }, async ({ workspace_id, invitation_id }) => result(() => api.operation(`/v1/workspaces/${encodeURIComponent(workspace_id)}/invitations/${encodeURIComponent(invitation_id)}/revoke`, "POST", {})));
+  server.registerTool("invitations.resend", {
+    description: "Send a replacement Workspace invitation as an owner, invalidating the previous link. Keep the same request_key after an uncertain response. The recipient accepts in the authenticated browser; this tool never accepts on their behalf.",
+    inputSchema: z.strictObject({ workspace_id: workspaceId, invitation_id: invitationId, request_key: z.string().regex(/^[A-Za-z0-9_.:-]{1,128}$/) }), outputSchema: genericOutput, annotations: mutate,
+  }, async ({ workspace_id, invitation_id, request_key }) => result(() => api.operation(`/v1/workspaces/${encodeURIComponent(workspace_id)}/invitations/${encodeURIComponent(invitation_id)}/resend`, "POST", {}, undefined, request_key)));
   server.registerTool("groups.list", {
     description: "List Test Groups for one authorized Project.",
     inputSchema: z.object({ project_id: projectId }), outputSchema: genericOutput, annotations: readOnly,
