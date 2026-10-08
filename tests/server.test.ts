@@ -6,6 +6,46 @@ const open: Array<{ close(): Promise<void> }> = [];
 afterEach(async () => { await Promise.all(open.splice(0).map((item) => item.close())); });
 
 describe("QA.army MCP Run parity", () => {
+  it.each(["QUEUED", "PROVISIONING", "RUNNING", "FAILED", "ERROR", "CANCELLED"])("returns the server Run link with the unchanged %s verdict", async status => {
+    const run = { ...runObject(status), context_schema_version: 5 };
+    const request = vi.fn<typeof fetch>(async () => Response.json({ run }));
+    const server = createVenkatMcpServer({ baseUrl: "https://api.qa.army", accessToken: "synthetic-token", request });
+    const client = new Client({ name: "native-receipt", version: "1" });
+    const [a, b] = InMemoryTransport.createLinkedPair(); await server.connect(b); await client.connect(a); open.push(client, server);
+    const result = await client.callTool({ name: "runs.get", arguments: { run_id: run.id } });
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({ status, run_url: run.run_url, context_schema_version: 5 });
+    expect(JSON.stringify(result)).not.toContain("synthetic-token");
+  });
+
+  it.each([
+    { context_schema_version: 6 },
+    { context_hash: "invalid" },
+    { run_url: undefined },
+    { run_url: "https://foreign.example.test/run" },
+    { run_url: runObject("READY").run_url.replace("/runs/run_", "/runs/run_f") },
+    { run_url: `${runObject("READY").run_url}?token=untrusted` },
+  ])("rejects malformed Run receipts %j", async override => {
+    const request = vi.fn<typeof fetch>(async () => Response.json({ run: { ...runObject("READY"), ...override } }));
+    const server = createVenkatMcpServer({ baseUrl: "https://api.qa.army", accessToken: "synthetic-token", request });
+    const client = new Client({ name: "malformed", version: "1" });
+    const [a, b] = InMemoryTransport.createLinkedPair(); await server.connect(b); await client.connect(a); open.push(client, server);
+    const result = await client.callTool({ name: "runs.get", arguments: { run_id: runObject("READY").id } });
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toBeUndefined();
+  });
+
+  it.each([403, 404, 409, 503])("does not turn API %i into a successful Run", async status => {
+    const request = vi.fn<typeof fetch>(async () => Response.json({ message: "Unavailable" }, { status }));
+    const server = createVenkatMcpServer({ baseUrl: "https://api.qa.army", accessToken: "synthetic-token", request });
+    const client = new Client({ name: "api-failure", version: "1" });
+    const [a, b] = InMemoryTransport.createLinkedPair(); await server.connect(b); await client.connect(a); open.push(client, server);
+    const result = await client.callTool({ name: "runs.create", arguments: { test_id: runObject("READY").test_id } });
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toBeUndefined();
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
   it("exposes daily questions and validates explicit answer choices without tenant authority",async()=>{
     const request=vi.fn<typeof fetch>(async()=>new Response(JSON.stringify({questions:[],answers:[]})));
     const server=createVenkatMcpServer({baseUrl:'https://api.qa.army',accessToken:'fixture',request});
@@ -19,6 +59,72 @@ describe("QA.army MCP Run parity", () => {
     expect(request).toHaveBeenCalledTimes(2);
   });
 
+  describe("owner invitation lifecycle", () => {
+    const workspace_id = `wsp_${"1".repeat(32)}`;
+    const invitation_id = `inv_${"2".repeat(32)}`;
+    async function connected(request: typeof fetch) {
+      const server = createVenkatMcpServer({ baseUrl: "https://api.qa.army", accessToken: "owner-token", request });
+      const client = new Client({ name: "invitation-test", version: "1" });
+      const [a, b] = InMemoryTransport.createLinkedPair();
+      await server.connect(b); await client.connect(a); open.push(client, server);
+      return client;
+    }
+    it.each(["list", "revoke", "resend"])("maps invitations.%s to canonical Workspace REST", async (action) => {
+      const receipt = action === "list" ? { invitations: [] } : { invitation: { id: action === "resend" ? `inv_${"3".repeat(32)}` : invitation_id, status: action === "revoke" ? "revoked" : "pending" } };
+      const request = vi.fn<typeof fetch>(async () => new Response(JSON.stringify(receipt)));
+      const client = await connected(request);
+      const args = { workspace_id, ...(action === "list" ? {} : { invitation_id }), ...(action === "resend" ? { request_key: "stable-invite-001" } : {}) };
+      const response = await client.callTool({ name: `invitations.${action}`, arguments: args });
+      expect(response.isError).not.toBe(true);
+      expect(response.structuredContent).toEqual(receipt);
+      expect(request).toHaveBeenCalledOnce();
+      const [url, init] = request.mock.calls[0]!;
+      expect(url).toBe(`https://api.qa.army/v1/workspaces/${workspace_id}/invitations${action === "list" ? "" : `/${invitation_id}/${action}`}`);
+      expect(init?.method).toBe(action === "list" ? "GET" : "POST");
+      expect(init?.headers).toMatchObject({ authorization: "Bearer owner-token" });
+      expect(init?.body).toBe(action === "list" ? undefined : "{}");
+      if (action === "resend") expect(init?.headers).toMatchObject({ "idempotency-key": "stable-invite-001" });
+      expect(JSON.stringify(response)).not.toContain("owner-token");
+    });
+    it("retains resend idempotency on explicit retry without retrying an ambiguous failure itself", async () => {
+      const request = vi.fn<typeof fetch>().mockRejectedValueOnce(new Error("Network unavailable"))
+        .mockResolvedValueOnce(new Response(JSON.stringify({ invitation: { id: `inv_${"3".repeat(32)}` } })));
+      const client = await connected(request);
+      const args = { workspace_id, invitation_id, request_key: "stable-invite-001" };
+      expect((await client.callTool({ name: "invitations.resend", arguments: args })).isError).toBe(true);
+      expect(request).toHaveBeenCalledOnce();
+      expect((await client.callTool({ name: "invitations.resend", arguments: args })).isError).not.toBe(true);
+      expect(request).toHaveBeenCalledTimes(2);
+      for (const [, init] of request.mock.calls) expect(init?.headers).toMatchObject({ "idempotency-key": "stable-invite-001" });
+    });
+    it.each([
+      { workspace_id: "../foreign", invitation_id, request_key: "stable-invite-001" },
+      { workspace_id, invitation_id: "inv_bad", request_key: "stable-invite-001" },
+      { workspace_id, invitation_id: `${invitation_id}/accept`, request_key: "stable-invite-001" },
+      { workspace_id, invitation_id },
+      { workspace_id, invitation_id, request_key: "x".repeat(129) },
+      { workspace_id, invitation_id, request_key: "line\nbreak" },
+      { workspace_id, invitation_id, request_key: "stable-invite-001", role: "owner" },
+    ])("rejects malformed input or invented authority %# before REST", async (args) => {
+      const request = vi.fn(); const client = await connected(request);
+      expect((await client.callTool({ name: "invitations.resend", arguments: args })).isError).toBe(true);
+      expect(request).not.toHaveBeenCalled();
+    });
+    it.each([401, 403, 404, 409, 410, 503])("reports HTTP %s without private details or mutation replay", async (status) => {
+      const request = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ detail: "Private invitation details" }), { status }));
+      const client = await connected(request);
+      const response = await client.callTool({ name: "invitations.revoke", arguments: { workspace_id, invitation_id } });
+      expect(response.isError).toBe(true);
+      expect(JSON.stringify(response)).not.toContain("Private");
+      expect(request).toHaveBeenCalledOnce();
+    });
+    it("does not expose recipient inspection or acceptance as agent tools", async () => {
+      const client = await connected(vi.fn());
+      const tools = (await client.listTools()).tools.map(({ name }) => name);
+      expect(tools).not.toContain("invitations.accept");
+      expect(tools).not.toContain("invitations.get");
+    });
+  });
   it.each([1, 2, 3, 4, 5])("reads RunContext v%i receipts", async context_schema_version => {
     const request = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ run: { ...runObject("READY"), context_schema_version } })));
     const server = createVenkatMcpServer({ baseUrl: "https://api.qa.army", accessToken: "token", request });
@@ -42,6 +148,34 @@ describe("QA.army MCP Run parity", () => {
     expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body)).journey).toEqual(journey);
     for (const type of ["assert", "screenshot"]) expect((await client.callTool({ name: "tests.create", arguments: { ...args, steps: [{ ...args.steps[0], type }] } })).isError).toBe(true);
     expect(request).toHaveBeenCalledTimes(1);
+  });
+  it.each(["android-pixel9pro-15", "ios-iphone16pro-18.2"])("preserves %s saved-Test selection through the same create/update REST tools", async profile_id => {
+    const request = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ test: { id: "tst_saved" } }), { status: 200 }));
+    const server = createVenkatMcpServer({ baseUrl: "https://app.example.test", accessToken: "token", request });
+    const client = new Client({ name: "native-test", version: "1.0.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport); await client.connect(clientTransport); open.push(client, server);
+    const native_target = { build_id: "nbd_" + "a".repeat(32), profile_id };
+    const fields = { name: "App search", description: null, group_id: null, enabled: true,
+      allow_web_search: false, deep_thinking: false, location_override: null, viewport: null, device_name: null,
+      native_target, steps: [{ type: "assert", instruction: "The app home is visible", enabled: true }] };
+    const result = await client.callTool({ name: "tests.create", arguments: { project_id: "prj_" + "b".repeat(32), ...fields } });
+    expect(result.isError).not.toBe(true);
+    expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body)).native_target).toEqual(native_target);
+    const updated = await client.callTool({ name: "tests.update", arguments: { test_id: "tst_" + "c".repeat(32), version: 1,
+      ...fields, native_target: null } });
+    expect(updated.isError).not.toBe(true);
+    expect(JSON.parse(String(request.mock.calls[1]?.[1]?.body)).native_target).toBeNull();
+    const { native_target: omitted, ...withoutSelection } = fields;
+    expect((await client.callTool({ name: "tests.update", arguments: {
+      test_id: "tst_" + "c".repeat(32), version: 2, ...withoutSelection,
+    } })).isError).not.toBe(true);
+    expect(JSON.parse(String(request.mock.calls[2]?.[1]?.body))).not.toHaveProperty("native_target");
+    expect(request.mock.calls[2]?.[1]).toMatchObject({ method: "PUT", headers: { "if-match": "2" } });
+    const invalid = await client.callTool({ name: "tests.create", arguments: { project_id: "prj_" + "b".repeat(32), ...fields,
+      native_target: { ...native_target, provider_url: "https://example.test" } } });
+    expect(invalid.isError).toBe(true);
+    expect(request).toHaveBeenCalledTimes(3);
   });
   it("maps PR settings with stable PUT idempotency and rejects invented authority",async()=>{
     const request=vi.fn<typeof fetch>(async()=>new Response(JSON.stringify({enabled:false}),{status:200}));
@@ -87,7 +221,7 @@ describe("QA.army MCP Run parity", () => {
       "builds.list", "builds.reserve", "builds.complete",
       "memories.questions", "memories.answer", "memories.list", "memories.graph", "memories.summary", "memories.create", "memories.update", "memories.decide", "memories.settings", "memories.import", "memories.history", "memories.clear",
       "workspaces.list", "workspaces.create", "workspaces.get", "workspaces.update",
-      "projects.list", "projects.create", "members.list", "invitations.create",
+      "projects.list", "projects.create", "members.list", "invitations.create", "invitations.list", "invitations.revoke", "invitations.resend",
       "groups.list", "groups.create", "groups.get", "groups.update",
       "tests.list", "tests.create", "tests.get", "tests.update", "tests.archive",
       "runs.create", "runs.get", "runs.start", "runs.watch", "runs.cancel",
@@ -185,6 +319,7 @@ function runObject(status: string) {
   return {
     id: `run_${"1".repeat(32)}`, status, workspace_id: `wsp_${"2".repeat(32)}`,
     project_id: `prj_${"3".repeat(32)}`, test_group_id: null, test_id: `tst_${"4".repeat(32)}`,
+    run_url: `https://app.qa.army/dashboard/example/projects/prj_${"3".repeat(32)}/tests/tst_${"4".repeat(32)}/runs/run_${"1".repeat(32)}`,
     context_schema_version: 2, context_hash: `sha256:${"a".repeat(64)}`,
     resolved_at: "2026-08-19T12:00:00.000Z",
     cancellation_requested_at: null, completed_at: null, outcome_summary: null,
