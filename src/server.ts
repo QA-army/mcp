@@ -14,6 +14,7 @@ const genericOutput = z.looseObject({});
 const receipt = z.object({
   id: z.string(), status: z.enum(["READY", "QUEUED", "PROVISIONING", "RUNNING", "PASSED", "FAILED", "ERROR", "CANCELLED"]), workspace_id: z.string(), project_id: z.string(),
   test_group_id: z.string().nullable(), test_id: z.string(), context_schema_version: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]),
+  run_url: z.url(),
   journey: journeyComposition.optional(),
   context_hash: z.string(), resolved_at: z.string(), cancellation_requested_at: z.string().nullable(),
   completed_at: z.string().nullable(), outcome_summary: z.string().nullable(),
@@ -48,6 +49,10 @@ const testFields = z.object({
   deep_thinking: z.boolean(), location_override: z.string().max(100).nullable(),
   viewport: z.object({ width: z.number().int().min(320).max(3840), height: z.number().int().min(320).max(2160) }).nullable(),
   device_name: z.string().max(100).nullable(), steps: z.array(step).min(1).max(50),
+  native_target: z.strictObject({
+    build_id: z.string().regex(/^nbd_[a-f0-9]{32}$/),
+    profile_id: z.enum(["android-pixel9pro-15", "ios-iphone16pro-18.2"]),
+  }).nullable().optional(),
   journey: journeyComposition.nullable().optional(),
 });
 
