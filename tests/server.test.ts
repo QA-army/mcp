@@ -261,7 +261,7 @@ describe("QA.army MCP Run parity", () => {
     const server = createVenkatMcpServer({ baseUrl: "https://api.qa.army", accessToken: "secret", request });
     const client = new Client({ name: "errors", version: "1" });
     const [a, b] = InMemoryTransport.createLinkedPair(); await server.connect(b); await client.connect(a); open.push(client, server);
-    const result = await client.callTool({ name: "workspaces.list", arguments: {} });
+    const result = await client.callTool({ name: "runs.get", arguments: { run_id: `run_${"1".repeat(32)}` } });
     expect(result.isError).toBe(true);
     expect(result.structuredContent).toEqual({ error: { status: 422, code: "INVALID_WORKSPACE", title: "Invalid Workspace" } });
     expect(JSON.stringify(result)).toContain("Invalid Workspace (INVALID_WORKSPACE, 422)");

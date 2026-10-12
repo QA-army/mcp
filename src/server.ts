@@ -10,7 +10,10 @@ const testId = z.string().regex(/^tst_[a-f0-9]{32}$/).describe("Server-owned Tes
 const runId = z.string().regex(/^run_[a-f0-9]{32}$/).describe("Server-owned Run identifier");
 const version = z.number().int().positive();
 const genericOutput = z.looseObject({});
-const dateTime = z.iso.datetime();
+const dateTime = z.iso.datetime({ offset: true });
+const problemOutput = z.object({
+  error: z.object({ status: z.number().int().min(400).max(599), code: z.string(), title: z.string() }),
+});
 const receipt = z.object({
   id: runId, status: z.enum(["READY", "QUEUED", "PROVISIONING", "RUNNING", "PASSED", "FAILED", "ERROR", "CANCELLED"]), workspace_id: workspaceId, project_id: projectId,
   test_group_id: groupId.nullable(), test_id: testId, context_schema_version: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]),
@@ -20,6 +23,7 @@ const receipt = z.object({
   context_hash: z.string().regex(/^sha256:[a-f0-9]{64}$/), resolved_at: dateTime, cancellation_requested_at: dateTime.nullable(),
   completed_at: dateTime.nullable(), outcome_summary: z.string().max(500).nullable(), created_at: dateTime, updated_at: dateTime,
 });
+const receiptOutput = z.union([receipt, problemOutput]);
 const slug = z.string().min(3).max(48).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
 const workspaceCreate = z.object({
   display_name: z.string().min(1).max(80), name: z.string().min(1).max(80),
@@ -205,7 +209,7 @@ export function createQaArmyMcpServer(options: QaArmyMcpOptions) {
     {
       description: "Create a READY QA.army Run by Test ID. Workspace, Project, Test Group, policy, and credentials are resolved server-side.",
       inputSchema: z.object({ test_id: testId, request_key: requestKey }),
-      outputSchema: receipt,
+      outputSchema: receiptOutput,
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
     async ({ test_id, request_key }) => result(() => api.create(test_id, request_key)),
@@ -215,14 +219,14 @@ export function createQaArmyMcpServer(options: QaArmyMcpOptions) {
     {
       description: "Get the safe status and immutable-context receipt for one authorized QA.army Run.",
       inputSchema: z.object({ run_id: runId }),
-      outputSchema: receipt,
+      outputSchema: receiptOutput,
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
     },
     async ({ run_id }) => result(() => api.get(run_id)),
   );
   server.registerTool("runs.start", {
     description: "Start one READY Run with server-bound isolated execution settings.",
-    inputSchema: z.object({ run_id: runId, request_key: requestKey }), outputSchema: receipt,
+    inputSchema: z.object({ run_id: runId, request_key: requestKey }), outputSchema: receiptOutput,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async ({ run_id, request_key }) => result(() => api.start(run_id, request_key)));
   server.registerTool("runs.watch", {
@@ -232,7 +236,7 @@ export function createQaArmyMcpServer(options: QaArmyMcpOptions) {
   }, async ({ run_id, after_sequence }) => result(() => api.watch(run_id, after_sequence)));
   server.registerTool("runs.cancel", {
     description: "Cancel one active Run and stop its isolated execution session.",
-    inputSchema: z.object({ run_id: runId, request_key: requestKey }), outputSchema: receipt,
+    inputSchema: z.object({ run_id: runId, request_key: requestKey }), outputSchema: receiptOutput,
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
   }, async ({ run_id, request_key }) => result(() => api.cancel(run_id, request_key)));
   return server;
