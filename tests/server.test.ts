@@ -115,7 +115,7 @@ describe("QA.army MCP Run parity", () => {
     const result = await client.callTool({ name: "runs.list", arguments: { test_id: `tst_${"4".repeat(32)}`, trigger: "manual" } });
     expect(result.isError).toBe(true);
     expect(result.structuredContent).toBeUndefined();
-    expect(JSON.stringify(result)).toContain("QA.army could not complete the Run request.");
+    expect(JSON.stringify(result)).toContain("QA.army could not complete the request.");
   });
 
   it("keeps forbidden Run history as an error without an empty success", async () => {
@@ -148,9 +148,9 @@ describe("QA.army MCP Run parity", () => {
       "memories.questions", "memories.answer", "memories.list", "memories.graph", "memories.summary", "memories.create", "memories.update", "memories.decide", "memories.settings", "memories.import", "memories.history", "memories.clear",
       "workspaces.list", "workspaces.create", "workspaces.get", "workspaces.update",
       "projects.list", "projects.create", "members.list", "invitations.create",
-      "groups.list", "groups.create", "groups.get", "groups.update",
+      "groups.run", "groups.list", "groups.create", "groups.get", "groups.update",
       "tests.list", "tests.create", "tests.get", "tests.update", "tests.archive",
-      "runs.list", "runs.create", "runs.get", "runs.start", "runs.watch", "runs.cancel",
+      "runs.list", "runs.create", "runs.get", "runs.start", "runs.watch", "runs.evidence", "runs.cancel",
     ]);
     const result = await client.callTool({
       name: "runs.create", arguments: { test_id: `tst_${"4".repeat(32)}` },

@@ -1,0 +1,3 @@
+# Preserve exact canonical CLI bytes for offline provenance verification on every OS.
+src/cli-auth/*.ts text eol=lf
+src/cli-auth/provenance.json text eol=lf

@@ -12,7 +12,15 @@ npm run validate
 node dist/src/index.js
 ```
 
-Configure the MCP host to supply `VENKAT_API_URL` and a short-lived `VENKAT_ACCESS_TOKEN` through its secret mechanism. The compatibility binary is `venkat-mcp`; stdout is reserved for MCP. Never print or persist tokens. Hosted account authorization remains `DOGFOOD-PENDING`.
+The API defaults to `https://api.qa.army`; optional `VENKAT_API_URL` must be HTTPS.
+Credential precedence matches CLI: `QA_ARMY_API_KEY`, then
+`QA_ARMY_ACCESS_TOKEN` / `VENKAT_ACCESS_TOKEN`, then an existing native profile
+key, then the native claimed WorkOS identity. Register once with
+`qa-army auth agent-register`; MCP reuses the same `qa.army.cli` native store,
+keeps access tokens in memory, and uses the CLI's assertion exchange and rotating
+refresh implementation. Native credentials are sent only to the canonical API
+origin. No token export or second login is required.
+The compatibility binary is `venkat-mcp`; stdout is reserved for MCP. Never print or persist tokens. Hosted account authorization remains `DOGFOOD-PENDING`.
 
 Read [AGENTS.md](AGENTS.md). Keep tool schemas aligned with supported platform/CLI behavior and pass Linux, macOS, and Windows CI.
 
@@ -24,15 +32,15 @@ Use `runs.list({ test_id: "tst_...", trigger: "manual" })` for manual Run eviden
 
 ## Product memory
 
-Memory management is undergoing release validation. Use a user session or profile API key; setup-only WorkOS credentials are restricted. Review evidence before approving proposals and keep credentials in Test Accounts. Published memory assists Test creation and individual Run actions; saved assertions still verify current behavior.
+Memory management is undergoing release validation. Use a user session or profile API key; claimed WorkOS credentials do not authorize Memory management. Review evidence before approving proposals and keep credentials in Test Accounts. Published memory assists Test creation and individual Run actions; saved assertions still verify current behavior.
 
 ### Native build registrations
 
-`builds.list`, `builds.reserve`, and `builds.complete` use server-authorized Mobile Project scope. Reserve the original filename, platform (`ios` or `android`), exact byte count, SHA-256 and a stable request key. Supported files are Android `.apk` and iOS simulator `.app.zip`, `.app.tar.gz` or `.app.tgz`, up to 512 MiB. PUT the file to the returned short-lived URL with only its supplied headers, never the Product bearer token. Complete registration after upload; the server verifies immutable original bytes. These tools require a user session or profile API key; agent setup credentials remain restricted. Build registration does not establish native Run support.
+`builds.list`, `builds.reserve`, and `builds.complete` use server-authorized Mobile Project scope. Reserve the original filename, platform (`ios` or `android`), exact byte count, SHA-256 and a stable request key. Supported files are Android `.apk` and iOS simulator `.app.zip`, `.app.tar.gz` or `.app.tgz`, up to 512 MiB. PUT the file to the returned short-lived URL with only its supplied headers, never the Product bearer token. Complete registration after upload; the server verifies immutable original bytes. These tools require a user session or profile API key; claimed WorkOS credentials cannot register builds. Build registration does not establish native Run support.
 
 ### Dynamic PR Tests pilot
 
-The assisted **DOGFOOD-PENDING** pilot adds `prs.list`, `prs.get`, `prs.settings`, `prs.configure`, `prs.usage`, `prs.cancel`, `prs.rerun`, and `prs.promote`. These tools call canonical REST; they do not read repository credentials or execute Tests locally. Restricted agent setup credentials remain restricted.
+The assisted **DOGFOOD-PENDING** pilot adds `prs.list`, `prs.get`, `prs.settings`, `prs.configure`, `prs.usage`, `prs.cancel`, `prs.rerun`, and `prs.promote`. These tools call canonical REST; they do not read repository credentials or execute Tests locally. Claimed WorkOS credentials remain restricted.
 
 Use `prs.usage` before discussing consumption. Enabling dynamic Tests automatically executes at most three generated Tests per matching preview. Planning is included, and each completed generated Test consumes one shared Workspace Run. Show that explicit reruns may consume up to three new Runs before requesting one. Mutation tools require `request_key`; retain it after an uncertain response. Promotion creates an editable regression copy without changing the original verification.
 
@@ -56,3 +64,68 @@ Read the stable Project/UTC-day set with `qa-army memories questions --project p
 Answers are customer-declared intent and require owner review before publication, even when an owner answers. Corrections append history; stale concurrent answers return a conflict. Never infer customer intent or submit a suggested choice automatically. Published answers may be supplied to future generation; supply does not prove influence or improved results.
 
 To revisit a saved set, select its date in Memory, use CLI `memories questions --project prj_... --day YYYY-MM-DD`, or pass `day` to MCP `memories.questions`. The historical API is `GET /v1/projects/{projectId}/memory/clarifications/{day}`. Only existing sets are returned; prior answers remain correctable with revision checks.
+
+## Test management and credentials
+
+Group and Test management use the same claimed WorkOS agent identity as setup.
+Run `qa-army auth agent-register` once; the server binds that identity to the
+claiming user's current Workspace membership. It can create/read/update Tests,
+manage Test Groups, and create/start/cancel Runs and inspect evidence. This does
+not grant Test deletion, Test Account secrets, billing, member administration or
+other owner-only operations. Never copy browser session credentials or put
+secrets in Test instructions.
+
+MCP calls the canonical API directly. It does not choose a Workspace on the
+caller's behalf or override server permissions. Concurrent native credential
+refreshes share a private process lock with CLI; an abandoned lock fails closed
+with recovery instructions.
+
+| Operation | Tool |
+| --- | --- |
+| List/create/read/update Groups | `groups.list`, `groups.create`, `groups.get`, `groups.update` |
+| Create/read/update Tests | `tests.create`, `tests.get`, `tests.update` |
+| Run a saved Test | `runs.create`, then `runs.start` |
+| Inspect result/events | `runs.get`, `runs.watch` |
+| Inspect finalized evidence | `runs.evidence` |
+
+Group updates take the current `version`. Test updates take the current
+`version` and complete editable definition. Change `group_id` to move a Test
+or `enabled` to enable/disable it, preserving steps, settings and journey
+metadata. Stale versions are rejected. A Test belongs to one Group; `null`
+selects its Project's Default group. There is no separate membership collection. `groups.run` uses the ordinary
+create/start lifecycle with the explicit selection contract below.
+
+`runs.evidence` returns finalized IDs, hashes and sizes, not signed URLs.
+For artifact bytes use the CLI `evidence download` command. MCP does not return
+raw signed URLs or write arbitrary files. Keep any REST artifact-open capability
+out of durable logs and receipts. A missing screenshot cannot be
+substituted with a metadata-only pass.
+
+### Explicit Group Run selection
+
+Read Group and Test metadata first, then freeze 1–20 unique enabled Tests as
+`selection: [{"test_id":"tst_...","version":3}]`. CLI accepts this object through
+`groups run --project prj_... --group tgr_... --request-key unique-batch-001 --input JSON`;
+MCP takes `groups.run({project_id, group_id, request_key, selection})`. Each Test
+is a separate canonical Run and may consume the normal Run allowance.
+
+All selected Tests are checked for the same Project/Group, enabled state and
+current version before any Run is created. Every created Run must expose the
+matching immutable `test_version` from RunContext (schema 2–5) and context hash
+before any child is started. Omitted/null versions never authorize dispatch.
+Older servers without that proof are blocked. A response is `DISPATCHED` or
+`INCOMPLETE`, never an aggregate Test pass. Use returned Run IDs to watch results
+and inspect evidence. A replayed child already beyond READY is reported without
+starting it again. The operation is not atomic: an interruption can leave READY
+or started children, identified in the partial receipt. Reconcile those IDs
+before retrying; keep the same selection and request key. Preparation failures
+attempt to cancel known READY children before any start; inspect cancellation
+receipts and explicitly cancel any remaining unused READY Runs. Never replace the selection with a fresh list on retry.
+
+## Shared agent authentication source
+
+The five modules under `src/cli-auth` are byte-identical to the CLI revision
+in `src/cli-auth/provenance.json`. The offline build checks their recorded
+SHA-256 hashes. Refresh/exchange concurrency and keyring behavior are maintained
+in CLI first, then copied with a new exact revision; MCP has no separate auth
+protocol or credential store.
