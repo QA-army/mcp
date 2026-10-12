@@ -288,8 +288,13 @@ describe("QA.army MCP Run parity", () => {
     const valid = { workspace_id, request_key: "k", name: "App", type: "mobile", target: { app_name: "App", binary_filename: "App.app.zip" } };
     expect((await client.callTool({ name: "projects.create", arguments: valid })).isError).not.toBe(true);
     expect((await client.callTool({ name: "projects.create", arguments: { ...valid, target: { ...valid.target, binary_filename: "App.app.tgz" } } })).isError).toBe(true);
+    expect((await client.callTool({ name: "projects.create", arguments: { ...valid, type: "web", target: { url: "ftp://example.test" } } })).isError).toBe(true);
     expect((await client.callTool({ name: "workspaces.create", arguments: { request_key: "k", display_name: "A", name: "A", slug: "ab" } })).isError).toBe(true);
-    expect(request).toHaveBeenCalledTimes(1);
+    expect((await client.callTool({ name: "invitations.create", arguments: { workspace_id, request_key: "k", emails: ["a@example.test", "a@example.test"] } })).isError).toBe(true);
+    const run_id = `run_${"1".repeat(32)}`;
+    expect((await client.callTool({ name: "runs.watch", arguments: { run_id, after_sequence: 1_000_000_000 } })).isError).not.toBe(true);
+    expect((await client.callTool({ name: "runs.watch", arguments: { run_id, after_sequence: 1_000_000_001 } })).isError).toBe(true);
+    expect(request).toHaveBeenCalledTimes(2);
   });
 });
 

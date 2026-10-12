@@ -34,7 +34,7 @@ const workspaceUpdate = z.object({
   slug: slug.optional(), avatar_url: z.url().nullable().optional(),
 }).refine(({ name, slug, avatar_url }) => name !== undefined || slug !== undefined || avatar_url !== undefined, "One update field is required");
 const projectCreate = z.discriminatedUnion("type", [
-  z.object({ workspace_id: workspaceId, name: z.string().min(1).max(100), description: z.string().max(1000).nullable().optional(), type: z.literal("web"), target: z.object({ url: z.url() }) }),
+  z.object({ workspace_id: workspaceId, name: z.string().min(1).max(100), description: z.string().max(1000).nullable().optional(), type: z.literal("web"), target: z.object({ url: z.url().regex(/^https?:\/\//) }) }),
   z.object({ workspace_id: workspaceId, name: z.string().min(1).max(100), description: z.string().max(1000).nullable().optional(), type: z.literal("mobile"), target: z.object({ app_name: z.string().min(1).max(100), binary_filename: z.string().max(255).regex(/^.+(?:\.apk|\.app\.zip)$/).nullable().optional() }) }),
 ]);
 const groupFields = z.object({ name: z.string().min(1).max(100), description: z.string().max(1000).nullable() });
@@ -150,7 +150,8 @@ export function createQaArmyMcpServer(options: QaArmyMcpOptions) {
   }, async ({ workspace_id }) => result(() => api.operation(`/v1/workspaces/${encodeURIComponent(workspace_id)}/members`)));
   server.registerTool("invitations.create", {
     description: "Persist pending member invitations in one authorized Workspace. Delivery remains DOGFOOD-PENDING.",
-    inputSchema: z.object({ workspace_id: workspaceId, request_key: requestKey, emails: z.array(z.email()).min(1).max(20) }),
+    inputSchema: z.object({ workspace_id: workspaceId, request_key: requestKey,
+      emails: z.array(z.email().max(254)).min(1).max(20).refine(values => new Set(values).size === values.length, "Invitation emails must be unique") }),
     outputSchema: genericOutput, annotations: mutate,
   }, async ({ workspace_id, request_key, emails }) => result(() => api.operation(`/v1/workspaces/${encodeURIComponent(workspace_id)}/invitations`, "POST", { emails }, undefined, request_key)));
   server.registerTool("groups.list", {
@@ -231,7 +232,7 @@ export function createQaArmyMcpServer(options: QaArmyMcpOptions) {
   }, async ({ run_id, request_key }) => result(() => api.start(run_id, request_key)));
   server.registerTool("runs.watch", {
     description: "Read normalized lifecycle events for one authorized Run after a cursor.",
-    inputSchema: z.object({ run_id: runId, after_sequence: z.number().int().min(0).max(10000).optional() }),
+    inputSchema: z.object({ run_id: runId, after_sequence: z.number().int().min(0).max(1_000_000_000).optional() }),
     outputSchema: genericOutput, annotations: readOnly,
   }, async ({ run_id, after_sequence }) => result(() => api.watch(run_id, after_sequence)));
   server.registerTool("runs.cancel", {
