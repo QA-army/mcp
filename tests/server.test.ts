@@ -112,7 +112,9 @@ describe("QA.army MCP Run parity", () => {
     await server.connect(b); await client.connect(a); open.push(client, server);
     const result = await client.callTool({ name: "runs.list", arguments: { test_id: `tst_${"4".repeat(32)}` } });
     expect(result.isError).toBe(true);
-    expect(result.structuredContent).toBeUndefined();
+    expect(result.structuredContent).toEqual({ error: {
+      status: 403, code: "API_REQUEST_FAILED", title: "QA.army API request failed",
+    } });
     expect(request).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(result)).not.toContain("private-token");
   });
