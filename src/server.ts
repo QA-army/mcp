@@ -180,11 +180,16 @@ export function createVenkatMcpServer(options: VenkatMcpOptions) {
     }),
     outputSchema: genericOutput,
     annotations: readOnly,
-  }, async ({ test_id, before, limit, trigger }) => result(() => {
+  }, async ({ test_id, before, limit, trigger }) => result(async () => {
     const search = new URLSearchParams({ test_id, limit: String(limit) });
     if (before !== undefined) search.set("before", before);
     if (trigger !== undefined) search.set("trigger", trigger);
-    return api.operation(`/v1/runs?${search.toString()}`);
+    const page = await api.operation(`/v1/runs?${search.toString()}`);
+    if (trigger !== undefined && (!Array.isArray(page.runs) || page.runs.some((run: unknown) =>
+      !run || typeof run !== "object" || !("trigger" in run) || run.trigger !== trigger))) {
+      throw new Error("QA.army returned Run evidence that does not match the requested trigger");
+    }
+    return page;
   }));
   server.registerTool(
     "runs.create",

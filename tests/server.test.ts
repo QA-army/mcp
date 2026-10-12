@@ -72,7 +72,7 @@ describe("QA.army MCP Run parity", () => {
     await client.close(); await server.close();
   });
   it.each([undefined, "manual", "deploy"])("lists Run evidence with trigger %s through canonical REST", async (trigger) => {
-    const page = { runs: [runObject("PASSED")], next_before: "next-page" };
+    const page = { runs: [{ ...runObject("PASSED"), ...(trigger === undefined ? {} : { trigger }) }], next_before: "next-page" };
     const request = vi.fn<typeof fetch>(async () => new Response(JSON.stringify(page), { status: 200 }));
     const server = createVenkatMcpServer({ baseUrl: "https://app.example.test", accessToken: "private-token", request });
     const client = new Client({ name: "run-history-test", version: "1" });
@@ -101,6 +101,21 @@ describe("QA.army MCP Run parity", () => {
       expect((await client.callTool({ name: "runs.list", arguments: { test_id: `tst_${"4".repeat(32)}`, ...invalid } })).isError).toBe(true);
     }
     expect(request).not.toHaveBeenCalled();
+  });
+
+  it.each(["deploy", "unknown", null, undefined])("rejects filtered evidence with returned trigger %s", async (returnedTrigger) => {
+    const request = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ runs: [
+      { ...runObject("PASSED"), trigger: "manual" },
+      { ...runObject("PASSED"), trigger: returnedTrigger },
+    ], next_before: null }), { status: 200 }));
+    const server = createVenkatMcpServer({ baseUrl: "https://app.example.test", accessToken: "private-token", request });
+    const client = new Client({ name: "run-history-test", version: "1" });
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    await server.connect(b); await client.connect(a); open.push(client, server);
+    const result = await client.callTool({ name: "runs.list", arguments: { test_id: `tst_${"4".repeat(32)}`, trigger: "manual" } });
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toBeUndefined();
+    expect(JSON.stringify(result)).toContain("QA.army could not complete the Run request.");
   });
 
   it("keeps forbidden Run history as an error without an empty success", async () => {
