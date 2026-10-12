@@ -1,7 +1,9 @@
+import type { ApiAccessTokenProvider } from "./cli-auth/agent-access-token.js";
 import { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import { journeyComposition } from "./journey.js";
-import { VenkatApi } from "./api.js";
+import { runGroup } from "./group-run.js";
+import { VenkatApi, ApiError } from "./api.js";
 
 const workspaceId = z.string().regex(/^wsp_[a-f0-9]{32}$/);
 const projectId = z.string().regex(/^prj_[a-f0-9]{32}$/);
@@ -14,6 +16,7 @@ const receipt = z.object({
   id: z.string(), status: z.enum(["READY", "QUEUED", "PROVISIONING", "RUNNING", "PASSED", "FAILED", "ERROR", "CANCELLED"]), workspace_id: z.string(), project_id: z.string(),
   test_group_id: z.string().nullable(), test_id: z.string(), context_schema_version: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]),
   journey: journeyComposition.optional(),
+  saved_steps: z.record(z.string(),z.unknown()).nullable().optional(),
   context_hash: z.string(), resolved_at: z.string(), cancellation_requested_at: z.string().nullable(),
   completed_at: z.string().nullable(), outcome_summary: z.string().nullable(),
 });
@@ -52,14 +55,14 @@ const testFields = z.object({
 
 export interface VenkatMcpOptions {
   readonly baseUrl: string;
-  readonly accessToken: string;
+  readonly accessToken: string | ApiAccessTokenProvider;
   readonly request?: typeof fetch;
 }
 
 export function createVenkatMcpServer(options: VenkatMcpOptions) {
   const api = new VenkatApi(options.baseUrl, options.accessToken, options.request);
   const server = new McpServer(
-    { name: "venkat", version: "0.1.2" },
+    { name: "venkat", version: "0.1.3" },
     { instructions: "Manage QA.army through server-authorized REST operations. Never infer or submit Workspace scope." },
   );
   const verificationId=z.string().regex(/^prv_[a-f0-9]{32}$/),integrationId=z.string().regex(/^int_[a-f0-9]{32}$/);
@@ -133,6 +136,11 @@ export function createVenkatMcpServer(options: VenkatMcpOptions) {
     inputSchema: z.object({ workspace_id: workspaceId, emails: z.array(z.email()).min(1).max(20) }),
     outputSchema: genericOutput, annotations: mutate,
   }, async ({ workspace_id, emails }) => result(() => api.operation(`/v1/workspaces/${encodeURIComponent(workspace_id)}/invitations`, "POST", { emails })));
+  server.registerTool("groups.run", {
+    description: "Dispatch an explicit frozen selection of 1–20 enabled Tests in one Group. Each child consumes a normal Run; not atomic. Reuse the request key and selection to reconcile an uncertain result; never blindly retry. Missing immutable Test-version proof prevents starting.",
+    inputSchema: z.strictObject({project_id:projectId,group_id:groupId,request_key:z.string().regex(/^[A-Za-z0-9_.:-]{8,128}$/),selection:z.array(z.strictObject({test_id:testId,version})).min(1).max(20)}),
+    outputSchema: genericOutput, annotations: {...mutate,idempotentHint:false},
+  }, async (input) => result(() => runGroup(api,input)));
   server.registerTool("groups.list", {
     description: "List Test Groups for one authorized Project.",
     inputSchema: z.object({ project_id: projectId }), outputSchema: genericOutput, annotations: readOnly,
@@ -221,6 +229,10 @@ export function createVenkatMcpServer(options: VenkatMcpOptions) {
     inputSchema: z.object({ run_id: runId, after_sequence: z.number().int().min(0).max(10000).optional() }),
     outputSchema: genericOutput, annotations: readOnly,
   }, async ({ run_id, after_sequence }) => result(() => api.watch(run_id, after_sequence)));
+  server.registerTool("runs.evidence", {
+    description: "List finalized evidence metadata for an authorized terminal Run. Returns stable IDs, hashes and sizes, never signed access URLs. An empty catalog does not establish a pass.",
+    inputSchema: z.object({ run_id: runId }), outputSchema: genericOutput, annotations: readOnly,
+  }, async ({ run_id }) => result(() => api.operation(`/v1/runs/${encodeURIComponent(run_id)}/evidence`)));
   server.registerTool("runs.cancel", {
     description: "Cancel one active Run and stop its isolated execution session.",
     inputSchema: z.object({ run_id: runId }), outputSchema: receipt,
@@ -235,9 +247,10 @@ async function result(work: () => Promise<unknown>) {
     return {
       content: [{ type: "text" as const, text: JSON.stringify(run) }],
       structuredContent: run as Record<string, unknown>,
+      ...(run && typeof run === "object" && "status" in run && run.status === "INCOMPLETE" ? {isError:true} : {}),
     };
-  } catch {
-    return { content: [{ type: "text" as const, text: "QA.army could not complete the Run request." }], isError: true };
+  } catch (error) {
+    return { content: [{ type: "text" as const, text: error instanceof ApiError ? error.message : "QA.army could not complete the request." }], isError: true };
   }
 }
 

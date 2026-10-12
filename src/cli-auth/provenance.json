@@ -1,0 +1,11 @@
+{
+  "repository": "https://github.com/QA-army/cli",
+  "revision": "5c40e3153512e448132a139a705b64069ee5a485",
+  "files": {
+    "agent-access-token.ts": "c0e89fd0b409ea51b3281233304486b5d9e6ace1150a99889c8c6fcd6e3c870d",
+    "agent-auth-store.ts": "8222dfe747f26c5e0c538f54166eecf55e6339d06356f25b5c444dc116b51b95",
+    "agent-credential-lock.ts": "9a63af7ad8787861ed481de418a04055a91de8258ebee8450cf0833b4e37e047",
+    "auth-store.ts": "4179a04bba2dc42109bd4cac690534d49acf232ef06ed9a0fdb446d77f16949c",
+    "workos-agent-registration.ts": "7c92105b85613eb459303d8ac35068f9b16a2cbbb10737ef39900f792c295a23"
+  }
+}
