@@ -18,6 +18,10 @@ Read [AGENTS.md](AGENTS.md). Keep tool schemas aligned with supported platform/C
 
 Codex: open this repo folder as the project and select Worktree from `main`. `.codex/environments/environment.toml` provides setup, cleanup, and actions; dependency installation is explicit.
 
+## Run evidence history
+
+Use `runs.list({ test_id: "tst_...", trigger: "manual" })` for manual Run evidence and `trigger: "deploy"` for deployment/PR evidence. Omit `trigger` for all Runs. Pass the returned `next_before` as `before` and preserve `trigger` when paging; `limit` accepts 1–50 (default 20). The server applies the filter before pagination and retains Workspace authorization. Filtering reads evidence; it never changes Run outcomes or establishes a passing PR check.
+
 ## Product memory
 
 Memory management is undergoing release validation. Use a user session or profile API key; setup-only WorkOS credentials are restricted. Review evidence before approving proposals and keep credentials in Test Accounts. Published memory assists Test creation and individual Run actions; saved assertions still verify current behavior.

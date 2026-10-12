@@ -170,6 +170,22 @@ export function createVenkatMcpServer(options: VenkatMcpOptions) {
     inputSchema: z.object({ test_id: testId, version }), outputSchema: genericOutput,
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
   }, async ({ test_id, version: current }) => result(() => api.operation(`/v1/tests/${encodeURIComponent(test_id)}`, "DELETE", undefined, current)));
+  server.registerTool("runs.list", {
+    description: "List authorized Runs for one Test. Filter manual evidence or deployment/PR evidence with trigger; omit it for all Runs. Preserve the filter when paging.",
+    inputSchema: z.strictObject({
+      test_id: testId,
+      before: z.string().min(1).optional(),
+      limit: z.number().int().min(1).max(50).default(20),
+      trigger: z.enum(["manual", "deploy"]).optional(),
+    }),
+    outputSchema: genericOutput,
+    annotations: readOnly,
+  }, async ({ test_id, before, limit, trigger }) => result(() => {
+    const search = new URLSearchParams({ test_id, limit: String(limit) });
+    if (before !== undefined) search.set("before", before);
+    if (trigger !== undefined) search.set("trigger", trigger);
+    return api.operation(`/v1/runs?${search.toString()}`);
+  }));
   server.registerTool(
     "runs.create",
     {
