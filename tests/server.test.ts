@@ -71,6 +71,66 @@ describe("QA.army MCP Run parity", () => {
     expect(JSON.stringify(receipt)).not.toContain("private-token");
     await client.close(); await server.close();
   });
+  it.each([undefined, "manual", "deploy"])("lists Run evidence with trigger %s through canonical REST", async (trigger) => {
+    const page = { runs: [{ ...runObject("PASSED"), ...(trigger === undefined ? {} : { trigger }) }], next_before: "next-page" };
+    const request = vi.fn<typeof fetch>(async () => new Response(JSON.stringify(page), { status: 200 }));
+    const server = createVenkatMcpServer({ baseUrl: "https://app.example.test", accessToken: "private-token", request });
+    const client = new Client({ name: "run-history-test", version: "1" });
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    await server.connect(b); await client.connect(a); open.push(client, server);
+    const testId = `tst_${"4".repeat(32)}`;
+    const args = { test_id: testId, ...(trigger === undefined ? {} : { trigger, before: "opaque+/=", limit: 1 }) };
+    const result = await client.callTool({ name: "runs.list", arguments: args });
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toEqual(page);
+    const url = new URL(String(request.mock.calls[0]?.[0]));
+    expect(url.pathname).toBe("/v1/runs");
+    expect(Object.fromEntries(url.searchParams)).toEqual({ test_id: testId, limit: trigger === undefined ? "20" : "1",
+      ...(trigger === undefined ? {} : { trigger, before: "opaque+/=" }) });
+    expect(request.mock.calls[0]?.[1]?.method).toBe("GET");
+  });
+
+  it("rejects invented Run triggers, scope and pagination before REST", async () => {
+    const request = vi.fn<typeof fetch>();
+    const server = createVenkatMcpServer({ baseUrl: "https://app.example.test", accessToken: "private-token", request });
+    const client = new Client({ name: "run-history-test", version: "1" });
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    await server.connect(b); await client.connect(a); open.push(client, server);
+    for (const invalid of [{ trigger: "scheduled" }, { trigger: "MANUAL" }, { trigger: "" }, { trigger: null },
+      { workspace_id: "foreign" }, { test_id: "foreign" }, { limit: 0 }, { limit: 51 }, { limit: 1.5 }, { before: "" }]) {
+      expect((await client.callTool({ name: "runs.list", arguments: { test_id: `tst_${"4".repeat(32)}`, ...invalid } })).isError).toBe(true);
+    }
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it.each(["deploy", "unknown", null, undefined])("rejects filtered evidence with returned trigger %s", async (returnedTrigger) => {
+    const request = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ runs: [
+      { ...runObject("PASSED"), trigger: "manual" },
+      { ...runObject("PASSED"), trigger: returnedTrigger },
+    ], next_before: null }), { status: 200 }));
+    const server = createVenkatMcpServer({ baseUrl: "https://app.example.test", accessToken: "private-token", request });
+    const client = new Client({ name: "run-history-test", version: "1" });
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    await server.connect(b); await client.connect(a); open.push(client, server);
+    const result = await client.callTool({ name: "runs.list", arguments: { test_id: `tst_${"4".repeat(32)}`, trigger: "manual" } });
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toBeUndefined();
+    expect(JSON.stringify(result)).toContain("QA.army could not complete the Run request.");
+  });
+
+  it("keeps forbidden Run history as an error without an empty success", async () => {
+    const request = vi.fn<typeof fetch>(async () => new Response("{}", { status: 403 }));
+    const server = createVenkatMcpServer({ baseUrl: "https://app.example.test", accessToken: "private-token", request });
+    const client = new Client({ name: "run-history-test", version: "1" });
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    await server.connect(b); await client.connect(a); open.push(client, server);
+    const result = await client.callTool({ name: "runs.list", arguments: { test_id: `tst_${"4".repeat(32)}`, trigger: "manual" } });
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toBeUndefined();
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(result)).not.toContain("private-token");
+  });
+
   it("discovers and calls runs.create through the MCP protocol using only test_id", async () => {
     const request = vi.fn<typeof fetch>(async () => response());
     const server = createVenkatMcpServer({
@@ -90,7 +150,7 @@ describe("QA.army MCP Run parity", () => {
       "projects.list", "projects.create", "members.list", "invitations.create",
       "groups.list", "groups.create", "groups.get", "groups.update",
       "tests.list", "tests.create", "tests.get", "tests.update", "tests.archive",
-      "runs.create", "runs.get", "runs.start", "runs.watch", "runs.cancel",
+      "runs.list", "runs.create", "runs.get", "runs.start", "runs.watch", "runs.cancel",
     ]);
     const result = await client.callTool({
       name: "runs.create", arguments: { test_id: `tst_${"4".repeat(32)}` },
