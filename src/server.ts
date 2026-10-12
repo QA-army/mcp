@@ -59,7 +59,8 @@ const testFields = {
 } as const;
 function testInput<T extends z.ZodRawShape>(extra: T) {
   return z.strictObject({ ...testFields, ...extra }).superRefine((value, context) => {
-    if (value.steps.filter(item => item.type === "login" && item.enabled).length > 1) {
+    const { steps } = value as unknown as { steps: Array<z.infer<typeof step>> };
+    if (steps.filter(item => item.type === "login" && item.enabled).length > 1) {
       context.addIssue({ code: "custom", path: ["steps"], message: "At most one enabled login step is allowed" });
     }
   });
