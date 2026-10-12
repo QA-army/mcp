@@ -4,6 +4,7 @@
   "private": false,
   "type": "module",
   "bin": {
+    "qa-army-mcp": "dist/src/index.js",
     "venkat-mcp": "dist/src/index.js"
   },
   "scripts": {

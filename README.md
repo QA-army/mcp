@@ -12,7 +12,9 @@ npm run validate
 node dist/src/index.js
 ```
 
-Configure the MCP host to supply `VENKAT_API_URL` and a short-lived `VENKAT_ACCESS_TOKEN` through its secret mechanism. The compatibility binary is `venkat-mcp`; stdout is reserved for MCP. Never print or persist tokens. Hosted account authorization remains `DOGFOOD-PENDING`.
+Configure the MCP host to supply a short-lived `QA_ARMY_ACCESS_TOKEN` through its secret mechanism. `QA_ARMY_API_URL` defaults to `https://api.qa.army`; it accepts that origin or `https://api.qa.army/v1` and normalizes both to the canonical origin. URLs with any other path, query, fragment, or embedded credentials are rejected.
+
+The primary binary is `qa-army-mcp`. `VENKAT_ACCESS_TOKEN`, `VENKAT_API_URL`, and `venkat-mcp` remain backward-compatible aliases. QA.army names take precedence when both environment variable forms are present. Stdout is reserved for MCP. Never print or persist tokens. Hosted account authorization remains `DOGFOOD-PENDING`.
 
 Read [AGENTS.md](AGENTS.md). Keep tool schemas aligned with supported platform/CLI behavior and pass Linux, macOS, and Windows CI.
 
@@ -20,7 +22,11 @@ Codex: open this repo folder as the project and select Worktree from `main`. `.c
 
 ## Run evidence history
 
-Use `runs.list({ test_id: "tst_...", trigger: "manual" })` for manual Run evidence and `trigger: "deploy"` for deployment/PR evidence. Omit `trigger` for all Runs. Pass the returned `next_before` as `before` and preserve `trigger` when paging; `limit` accepts 1–50 (default 20). The server applies the filter before pagination and retains Workspace authorization. A filtered response with a missing or different Run trigger is rejected, including during a backend rollout. Filtering reads evidence; it never changes Run outcomes or establishes a passing PR check.
+Use `runs.list({ test_id: "tst_..." })` to read Run evidence. Pass the returned `next_before` as `before`; `limit` accepts 1–50 (default 20), and cursors contain only URL-safe letters, digits, `_`, and `-` up to 256 characters. The canonical API does not currently expose a trigger query parameter. Inspect each returned Run's `trigger` field when provenance matters; do not emulate trigger filtering across paginated results.
+
+## Safe mutation retries
+
+Mutations whose Product API operations require `Idempotency-Key` expose a required `request_key`. Use a new 1–128 character key (`A-Z`, `a-z`, digits, `.`, `_`, `:`, or `-`) for each deliberate mutation. If a response is uncertain, retry the same operation and payload with the same key. Do not rotate the key for an uncertain retry, and do not reuse it for a different payload.
 
 ## Product memory
 
