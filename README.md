@@ -65,7 +65,7 @@ Memory management is undergoing release validation. Use a user session or profil
 
 ### Dynamic PR Tests pilot
 
-The assisted **DOGFOOD-PENDING** pilot adds `prs.list`, `prs.get`, `prs.settings`, `prs.configure`, `prs.usage`, `prs.cancel`, `prs.rerun`, and `prs.promote`. These tools call canonical REST; they do not read repository credentials or execute Tests locally. Claimed WorkOS credentials remain restricted.
+The assisted **DOGFOOD-PENDING** pilot adds `prs.list`, `prs.get`, `prs.settings`, `prs.configure`, `prs.usage`, `prs.cancel`, `prs.rerun`, and `prs.promote`. These tools call canonical REST; they do not read repository credentials or execute Tests locally. A governed claimed WorkOS agent can use `prs.list`, `prs.get`, and explicit `prs.rerun` within the claiming user's authorized Workspace. The server retains preview qualification, current-revision checks, idempotency and Run limits. Dynamic settings, configuration, usage, cancellation and promotion remain outside this claimed-agent permission; use a supported user session or profile credential for those operations. Deployment-watch permissions are separate.
 
 Use `prs.usage` before discussing consumption. Enabling dynamic Tests automatically executes at most three generated Tests per matching preview. Planning is included, and each completed generated Test consumes one shared Workspace Run. Show that explicit reruns may consume up to three new Runs before requesting one. Mutation tools require `request_key`; retain it after an uncertain response. Promotion creates an editable regression copy without changing the original verification.
 
