@@ -67,6 +67,10 @@ export function createVenkatMcpServer(options: VenkatMcpOptions) {
   );
   const verificationId=z.string().regex(/^prv_[a-f0-9]{32}$/),integrationId=z.string().regex(/^int_[a-f0-9]{32}$/);
   const requestKey=z.string().regex(/^[A-Za-z0-9_.:-]{8,128}$/).describe("Reuse this key only when retrying the same request after an uncertain response.");
+  server.registerTool("prs.approval_links", {
+    description: "Read PR review links with QA.army evidence for one authorized Project. Covers only QA-observed PRs, not all assigned reviews. Preserve server freshness, evidence status, reasons and truncation; a link or historical pass does not establish approval or merge readiness. Does not approve, merge or start Runs.",
+    inputSchema: z.strictObject({project_id:projectId}), outputSchema:genericOutput, annotations:readOnly,
+  }, async ({project_id}) => result(() => api.operation(`/v1/projects/${project_id}/pr-approval-links`)));
   server.registerTool("prs.watch", {
     description: "Read the existing GitHub deployment watch and selected Test Groups. Claimed WorkOS agents require current Workspace OWNER membership and a connected watch.",
     inputSchema: z.strictObject({integration_id:integrationId}), outputSchema:genericOutput, annotations:readOnly,

@@ -30,6 +30,26 @@ Codex: open this repo folder as the project and select Worktree from `main`. `.c
 
 Use `runs.list({ test_id: "tst_...", trigger: "manual" })` for manual Run evidence and `trigger: "deploy"` for deployment/PR evidence. Omit `trigger` for all Runs. Pass the returned `next_before` as `before` and preserve `trigger` when paging; `limit` accepts 1–50 (default 20). The server applies the filter before pagination and retains Workspace authorization. A filtered response with a missing or different Run trigger is rejected, including during a backend rollout. Filtering reads evidence; it never changes Run outcomes or establishes a passing PR check.
 
+## PR review links with QA.army evidence (release validation pending)
+
+For “Show me my PR approval links with QA.army evidence,” use
+`prs.approval_links({ project_id: "prj_..." })`. The tool makes one authenticated
+`GET /v1/projects/{projectId}/pr-approval-links` request. QA.army's proprietary
+cloud service owns authorization, GitHub observations and evidence aggregation;
+this public adapter does not read repository credentials or calculate readiness.
+
+The response identifies `project_id`, `observed_at`, `scope: "qa_observed_prs"`,
+`truncated`, and `items`. Show the returned review links, current and recorded
+heads, checks, Runs, `evidence_status` and reasons without promoting missing,
+stale, failed or blocked evidence to a pass. This is the Project's QA-observed
+inventory, not every PR assigned to the user. Preserve any truncation warning.
+A review link is navigation for a human; this tool does not approve, merge,
+start a Run or establish merge readiness. API errors remain errors, including
+when the endpoint is unavailable or the credential lacks permission.
+
+This source addition requires the matching server endpoint and a released client.
+It does not add a hosted MCP connection for an iPhone; transport remains stdio.
+
 ## Product memory
 
 Memory management is undergoing release validation. Use a user session or profile API key; claimed WorkOS credentials do not authorize Memory management. Review evidence before approving proposals and keep credentials in Test Accounts. Published memory assists Test creation and individual Run actions; saved assertions still verify current behavior.
