@@ -62,11 +62,22 @@ export interface VenkatMcpOptions {
 export function createVenkatMcpServer(options: VenkatMcpOptions) {
   const api = new VenkatApi(options.baseUrl, options.accessToken, options.request);
   const server = new McpServer(
-    { name: "venkat", version: "0.1.3" },
+    { name: "venkat", version: "0.1.4" },
     { instructions: "Manage QA.army through server-authorized REST operations. Never infer or submit Workspace scope." },
   );
   const verificationId=z.string().regex(/^prv_[a-f0-9]{32}$/),integrationId=z.string().regex(/^int_[a-f0-9]{32}$/);
   const requestKey=z.string().regex(/^[A-Za-z0-9_.:-]{8,128}$/).describe("Reuse this key only when retrying the same request after an uncertain response.");
+  server.registerTool("prs.watch", {
+    description: "Read the existing GitHub deployment watch and selected Test Groups. Claimed WorkOS agents require current Workspace OWNER membership and a connected watch.",
+    inputSchema: z.strictObject({integration_id:integrationId}), outputSchema:genericOutput, annotations:readOnly,
+  }, async ({integration_id}) => result(() => api.operation(`/v1/integrations/${integration_id}/deployment-watch`)));
+  server.registerTool("prs.watch_update", {
+    description: "Replace selected Test Groups and enabled state on an existing connected GitHub watch. Claimed agents require current Workspace OWNER membership and cannot change its repository. Preserve other desired groups explicitly. PUT has no conditional version or replay key: read back after an uncertain response, never retry blindly. Saving a watch does not itself prove a passing Run.",
+    inputSchema: z.strictObject({integration_id:integrationId,repository_id:z.string().regex(/^[1-9][0-9]{0,19}$/),test_group_ids:z.array(groupId).max(50),enabled:z.boolean()})
+      .refine(v => new Set(v.test_group_ids).size === v.test_group_ids.length, "Test Group selection contains duplicates")
+      .refine(v => !v.enabled || v.test_group_ids.length > 0, "Select at least one Test Group when enabled"),
+    outputSchema:genericOutput, annotations:mutate,
+  }, async ({integration_id,...body}) => result(() => api.operation(`/v1/integrations/${integration_id}/deployment-watch`,'PUT',body)));
   server.registerTool("prs.list",{description:"List Project dynamic PR verifications. Assisted pilot; no missing execution is a pass.",inputSchema:z.object({project_id:projectId}),outputSchema:genericOutput,annotations:readOnly},async({project_id})=>result(()=>api.operation(`/v1/projects/${project_id}/pr-verifications`)));
   server.registerTool("prs.get",{description:"Read the frozen plan, coverage limitations and canonical Run references.",inputSchema:z.object({verification_id:verificationId}),outputSchema:genericOutput,annotations:readOnly},async({verification_id})=>result(()=>api.operation(`/v1/pr-verifications/${verification_id}`)));
   server.registerTool("prs.usage",{description:"Read shared Workspace pilot allowance, reservations and completed usage.",inputSchema:z.object({workspace_id:workspaceId}),outputSchema:genericOutput,annotations:readOnly},async({workspace_id})=>result(()=>api.operation(`/v1/workspaces/${workspace_id}/pr-usage`)));

@@ -143,7 +143,7 @@ describe("QA.army MCP Run parity", () => {
 
     const listed = await client.listTools();
     expect(listed.tools.map(({ name }) => name)).toEqual([
-      "prs.list", "prs.get", "prs.usage", "prs.settings", "prs.configure", "prs.cancel", "prs.rerun", "prs.promote",
+      "prs.watch", "prs.watch_update", "prs.list", "prs.get", "prs.usage", "prs.settings", "prs.configure", "prs.cancel", "prs.rerun", "prs.promote",
       "builds.list", "builds.reserve", "builds.complete",
       "memories.questions", "memories.answer", "memories.list", "memories.graph", "memories.summary", "memories.create", "memories.update", "memories.decide", "memories.settings", "memories.import", "memories.history", "memories.clear",
       "workspaces.list", "workspaces.create", "workspaces.get", "workspaces.update",
