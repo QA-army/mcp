@@ -38,11 +38,16 @@ For “Show me my PR approval links with QA.army evidence,” use
 cloud service owns authorization, GitHub observations and evidence aggregation;
 this public adapter does not read repository credentials or calculate readiness.
 
-The response identifies `project_id`, `observed_at`, `scope: "qa_observed_prs"`,
-`truncated`, and `items`. Show the returned review links, current and recorded
-heads, checks, Runs, `evidence_status` and reasons without promoting missing,
-stale, failed or blocked evidence to a pass. This is the Project's QA-observed
-inventory, not every PR assigned to the user. Preserve any truncation warning.
+Use an authorized Cognito user session or a governed claimed WorkOS agent.
+Profile API keys and setup-only credentials are denied. Preserve `403` as an
+error; never switch identities or substitute credentials to bypass it.
+
+The response covers at most 10 QA-observed PRs for the Project, not every PR
+assigned to the user. Show the returned review links and server `qa_state`,
+freshness and evidence reasons; preserve any truncation warning. Selected Run
+attempts, evidence finalization and cleanup affect evidence readiness. Observed
+checks are not the repository's required branch rules. Missing, stale, failed
+or blocked evidence must not become a pass.
 A review link is navigation for a human; this tool does not approve, merge,
 start a Run or establish merge readiness. API errors remain errors, including
 when the endpoint is unavailable or the credential lacks permission.
