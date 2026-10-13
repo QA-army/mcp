@@ -67,7 +67,7 @@ Memory management is undergoing release validation. Use a user session or profil
 
 The assisted **DOGFOOD-PENDING** pilot adds `prs.list`, `prs.get`, `prs.settings`, `prs.configure`, `prs.usage`, `prs.cancel`, `prs.rerun`, and `prs.promote`. These tools call canonical REST; they do not read repository credentials or execute Tests locally. Claimed WorkOS credentials remain restricted.
 
-Use `prs.usage` before discussing consumption. Enabling dynamic Tests automatically executes at most three generated Tests per matching preview. Planning is included, and each completed generated Test consumes one shared Workspace Run. Show that explicit reruns may consume up to three new Runs before requesting one. Mutation tools require `request_key`; retain it after an uncertain response. Promotion creates an editable regression copy without changing the original verification.
+Use `prs.usage` before discussing consumption. Enabling dynamic Tests automatically executes at most three generated Tests per matching preview. Planning is included, and each generated Test that ends `PASSED` or `FAILED` consumes one Run from the applicable shared allowance. `ERROR` Runs do not consume the allowance. Free uses the automation owner's monthly account allowance across all Workspaces; paid plans use the Workspace allowance. Show that explicit reruns may consume up to three new Runs before requesting one. Mutation tools require `request_key`; retain it after an uncertain response. Promotion creates an editable regression copy without changing the original verification.
 
 ## ACT outcomes
 
