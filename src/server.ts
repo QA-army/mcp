@@ -10,6 +10,10 @@ const projectId = z.string().regex(/^prj_[a-f0-9]{32}$/);
 const groupId = z.string().regex(/^tgr_[a-f0-9]{32}$/);
 const testId = z.string().regex(/^tst_[a-f0-9]{32}$/).describe("Server-owned Test identifier");
 const runId = z.string().regex(/^run_[a-f0-9]{32}$/).describe("Server-owned Run identifier");
+// The final lookahead forbids the trailing newline that JavaScript `$` otherwise accepts.
+const invitationReturnPath = z.string().max(2048)
+  .regex(/^\/dashboard\/[a-z0-9]+(?:-[a-z0-9]+)*\/projects\/prj_[a-f0-9]{32}\/tests\/tst_[a-f0-9]{32}(?:\/runs\/run_[a-f0-9]{32})?$(?![\s\S])/)
+  .describe("Raw relative Test or Run path. The server verifies same-Workspace resource access; this is navigation, not an access grant.");
 const version = z.number().int().positive();
 const genericOutput = z.looseObject({});
 const receipt = z.object({
@@ -147,10 +151,10 @@ export function createVenkatMcpServer(options: VenkatMcpOptions) {
     inputSchema: z.object({ workspace_id: workspaceId }), outputSchema: genericOutput, annotations: readOnly,
   }, async ({ workspace_id }) => result(() => api.operation(`/v1/workspaces/${encodeURIComponent(workspace_id)}/members`)));
   server.registerTool("invitations.create", {
-    description: "Persist pending member invitations in one authorized Workspace. Delivery remains DOGFOOD-PENDING.",
-    inputSchema: z.object({ workspace_id: workspaceId, emails: z.array(z.email()).min(1).max(20) }),
+    description: "Create and email pending invitations as a Workspace owner with an authorized credential. Preserve server delivery status; sent is not received or accepted. Claimed agent credentials cannot manage invitations. Recipients join explicitly in the browser.",
+    inputSchema: z.strictObject({ workspace_id: workspaceId, emails: z.array(z.email()).min(1).max(20), return_to: invitationReturnPath.optional() }),
     outputSchema: genericOutput, annotations: mutate,
-  }, async ({ workspace_id, emails }) => result(() => api.operation(`/v1/workspaces/${encodeURIComponent(workspace_id)}/invitations`, "POST", { emails })));
+  }, async ({ workspace_id, ...body }) => result(() => api.operation(`/v1/workspaces/${encodeURIComponent(workspace_id)}/invitations`, "POST", body)));
   server.registerTool("groups.run", {
     description: "Dispatch an explicit frozen selection of 1–20 enabled Tests in one Group. Each child consumes a normal Run; not atomic. Reuse the request key and selection to reconcile an uncertain result; never blindly retry. Missing immutable Test-version proof prevents starting.",
     inputSchema: z.strictObject({project_id:projectId,group_id:groupId,request_key:z.string().regex(/^[A-Za-z0-9_.:-]{8,128}$/),selection:z.array(z.strictObject({test_id:testId,version})).min(1).max(20)}),
