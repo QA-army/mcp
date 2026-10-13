@@ -30,6 +30,31 @@ Codex: open this repo folder as the project and select Worktree from `main`. `.c
 
 Use `runs.list({ test_id: "tst_...", trigger: "manual" })` for manual Run evidence and `trigger: "deploy"` for deployment/PR evidence. Omit `trigger` for all Runs. Pass the returned `next_before` as `before` and preserve `trigger` when paging; `limit` accepts 1–50 (default 20). The server applies the filter before pagination and retains Workspace authorization. A filtered response with a missing or different Run trigger is rejected, including during a backend rollout. Filtering reads evidence; it never changes Run outcomes or establishes a passing PR check.
 
+## PR review links with QA.army evidence (release validation pending)
+
+For “Show me my PR approval links with QA.army evidence,” use
+`prs.approval_links({ project_id: "prj_..." })`. The tool makes one authenticated
+`GET /v1/projects/{projectId}/pr-approval-links` request. QA.army's proprietary
+cloud service owns authorization, GitHub observations and evidence aggregation;
+this public adapter does not read repository credentials or calculate readiness.
+
+Use an authorized Cognito user session or a governed claimed WorkOS agent.
+Profile API keys and setup-only credentials are denied. Preserve `403` as an
+error; never switch identities or substitute credentials to bypass it.
+
+The response covers at most 10 QA-observed PRs for the Project, not every PR
+assigned to the user. Show the returned review links and server `qa_state`,
+freshness and evidence reasons; preserve any truncation warning. Selected Run
+attempts, evidence finalization and cleanup affect evidence readiness. Observed
+checks are not the repository's required branch rules. Missing, stale, failed
+or blocked evidence must not become a pass.
+A review link is navigation for a human; this tool does not approve, merge,
+start a Run or establish merge readiness. API errors remain errors, including
+when the endpoint is unavailable or the credential lacks permission.
+
+This source addition requires the matching server endpoint and a released client.
+It does not add a hosted MCP connection for an iPhone; transport remains stdio.
+
 ## Product memory
 
 Memory management is undergoing release validation. Use a user session or profile API key; claimed WorkOS credentials do not authorize Memory management. Review evidence before approving proposals and keep credentials in Test Accounts. Published memory assists Test creation and individual Run actions; saved assertions still verify current behavior.
