@@ -72,7 +72,7 @@ export function createVenkatMcpServer(options: VenkatMcpOptions) {
     inputSchema: z.strictObject({integration_id:integrationId}), outputSchema:genericOutput, annotations:readOnly,
   }, async ({integration_id}) => result(() => api.operation(`/v1/integrations/${integration_id}/deployment-watch`)));
   server.registerTool("prs.watch_update", {
-    description: "Replace selected Test Groups and enabled state on an existing connected GitHub watch. Current OWNER only; claimed agents cannot change its repository. Preserve other desired groups explicitly. PUT has no conditional version or replay key: read back after an uncertain response, never retry blindly. Saving a watch does not itself prove a passing Run.",
+    description: "Replace selected Test Groups and enabled state on an existing connected GitHub watch. Claimed agents require current Workspace OWNER membership and cannot change its repository. Preserve other desired groups explicitly. PUT has no conditional version or replay key: read back after an uncertain response, never retry blindly. Saving a watch does not itself prove a passing Run.",
     inputSchema: z.strictObject({integration_id:integrationId,repository_id:z.string().regex(/^[1-9][0-9]{0,19}$/),test_group_ids:z.array(groupId).max(50),enabled:z.boolean()})
       .refine(v => new Set(v.test_group_ids).size === v.test_group_ids.length, "Test Group selection contains duplicates")
       .refine(v => !v.enabled || v.test_group_ids.length > 0, "Select at least one Test Group when enabled"),
