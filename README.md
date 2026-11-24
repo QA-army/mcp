@@ -20,7 +20,7 @@ key, then the native claimed WorkOS identity. Register once with
 keeps access tokens in memory, and uses the CLI's assertion exchange and rotating
 refresh implementation. Native credentials are sent only to the canonical API
 origin. No token export or second login is required.
-The compatibility binary is `venkat-mcp`; stdout is reserved for MCP. Never print or persist tokens. Hosted account authorization remains `DOGFOOD-PENDING`.
+The compatibility binary is `venkat-mcp`. Reserve stdout for MCP. Never print or persist tokens. Hosted MCP connections and a separate MCP browser sign-in are unavailable.
 
 Read [AGENTS.md](AGENTS.md). Keep tool schemas aligned with supported platform/CLI behavior and pass Linux, macOS, and Windows CI.
 
@@ -63,9 +63,9 @@ Memory management is undergoing release validation. Use a user session or profil
 
 `builds.list`, `builds.reserve`, and `builds.complete` use server-authorized Mobile Project scope. Reserve the original filename, platform (`ios` or `android`), exact byte count, SHA-256 and a stable request key. Supported files are Android `.apk` and iOS simulator `.app.zip`, `.app.tar.gz` or `.app.tgz`, up to 512 MiB. PUT the file to the returned short-lived URL with only its supplied headers, never the Product bearer token. Complete registration after upload; the server verifies immutable original bytes. These tools require a user session or profile API key; claimed WorkOS credentials cannot register builds. Build registration does not establish native Run support.
 
-### Dynamic PR Tests pilot
+## Dynamic PR Tests
 
-The assisted **DOGFOOD-PENDING** pilot adds `prs.list`, `prs.get`, `prs.settings`, `prs.configure`, `prs.usage`, `prs.cancel`, `prs.rerun`, and `prs.promote`. These tools call canonical REST; they do not read repository credentials or execute Tests locally. A governed claimed WorkOS agent can use `prs.list`, `prs.get`, and explicit `prs.rerun` within the claiming user's authorized Workspace. The server retains preview qualification, current-revision checks, idempotency and Run limits. Dynamic settings, configuration, usage, cancellation and promotion remain outside this claimed-agent permission; use a supported user session or profile credential for those operations. Deployment-watch permissions are separate.
+Use `prs.list`, `prs.get`, `prs.settings`, `prs.configure`, `prs.usage`, `prs.cancel`, `prs.rerun`, and `prs.promote` to work with Dynamic PR Tests on qualifying Vercel previews. The QA.army API qualifies the preview, checks the current PR revision, and enforces idempotency and Run limits. A claimed WorkOS agent can use `prs.list`, `prs.get`, and explicit `prs.rerun` within the claiming user's authorized Workspace. Use a supported user session or profile credential for settings, configuration, usage, cancellation, and promotion. Deployment-watch permissions are separate. See the [GitHub Pull Request Testing guide](https://docs.qa.army/github-pull-request-testing) for setup.
 
 Use `prs.usage` before discussing consumption. Enabling dynamic Tests automatically executes at most three generated Tests per matching preview. Planning is included, and each completed generated Test consumes one shared Workspace Run. Show that explicit reruns may consume up to three new Runs before requesting one. Mutation tools require `request_key`; retain it after an uncertain response. Promotion creates an editable regression copy without changing the original verification.
 
